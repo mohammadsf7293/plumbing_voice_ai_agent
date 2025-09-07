@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent import Assistant
+from agent import Assistant, get_technician_available_times_from_db
 
 
 @pytest.mark.asyncio
@@ -11,7 +11,8 @@ async def test_assistant_initialization():
     assistant = Assistant()
     
     # Check that the instructions are set correctly
-    assert assistant.instructions == "You are a helpful voice AI assistant."
+    # We'll just check that the instructions contain a specific phrase rather than the entire text
+    assert "You are a helpful and friendly receptionist for a plumbing company." in assistant.instructions
 
 
 @pytest.mark.asyncio
@@ -23,7 +24,6 @@ async def test_assistant_with_custom_instructions():
     
     # Since instructions is a property without a setter, we need to modify the underlying attribute
     # or create a new instance with the custom instructions
-    assistant = Assistant()
     assistant._instructions = custom_instructions  # Directly modify the protected attribute
     
     # Check that the instructions are set correctly
@@ -51,3 +51,44 @@ async def test_assistant_with_agent_session(mock_agent_session):
     
     # Check that the result is as expected
     assert result == mock_result
+
+
+@pytest.mark.asyncio
+async def test_get_technician_available_times_from_db():
+    """Test that the get_technician_available_times_from_db function returns the expected list."""
+    # Call the function
+    result = await get_technician_available_times_from_db()
+    
+    # Check that the result is a list
+    assert isinstance(result, list)
+    
+    # Check that the list contains the expected number of time slots
+    assert len(result) > 0
+    
+    # Check that each item in the list is a string
+    for time_slot in result:
+        assert isinstance(time_slot, str)
+
+
+@pytest.mark.asyncio
+async def test_assistant_has_technician_times_tool():
+    """Test that the Assistant has the get_technician_available_times tool registered."""
+    # Create an instance of the Assistant class
+    assistant = Assistant()
+    
+    # Check that the assistant has tools
+    assert hasattr(assistant, 'tools')
+    assert assistant.tools is not None
+    
+    # Check that there's at least one tool
+    assert len(assistant.tools) > 0
+    
+    # Check that one of the tools is the get_technician_available_times tool
+    # The tools might be wrapped in a way that doesn't expose a 'name' attribute directly
+    # Instead, let's check if any tool's string representation contains our function name
+    tool_found = False
+    for tool in assistant.tools:
+        if "get_technician_available_times" in str(tool):
+            tool_found = True
+            break
+    assert tool_found, "get_technician_available_times tool not found in assistant tools"
