@@ -3,7 +3,7 @@ import random
 from typing import List, Optional
 
 from livekit import agents
-from livekit.agents import AgentSession, Agent, RoomInputOptions, function_tool
+from livekit.agents import AgentSession, Agent, RoomInputOptions, function_tool, RunContext
 from livekit.plugins import (
     openai,
     cartesia,
@@ -67,8 +67,134 @@ async def get_technician_available_times_from_db(technician_name: Optional[str] 
     # Otherwise, return all available times
     return available_times
 
+class AppointmentAgent(Agent):
+    """
+    Specialized agent for managing appointments (setting new appointments,
+    following up pending appointments, etc.)
+    """
+    def __init__(self) -> None:
+        instructions = """You are a specialized appointment agent for a plumbing company.
+
+CORE PRINCIPLES:
+- Be concise and clear in your responses, optimizing for voice communication
+- Speak naturally with appropriate pauses and conversational rhythm
+- Prioritize user needs and respond directly to their queries
+- Maintain a consistent, friendly, and reassuring tone throughout conversations
+- Provide professional yet approachable support, ensuring customers feel heard and cared for
+
+CAPABILITIES:
+- Schedule new appointments for plumbing services
+- Reschedule or cancel existing appointments
+- Follow up on pending appointments
+- Check available technician time slots
+- Gather all necessary details for appointments (name, address, contact info, issue description)
+- Confirm appointment details with customers
+
+INTERACTION GUIDELINES:
+- Begin by acknowledging that you're the appointment specialist
+- Gather all necessary information systematically
+- Confirm understanding before finalizing any appointment
+- Provide clear confirmation of appointment details
+- Thank the customer for choosing our plumbing services
+
+RESPONSE STYLE:
+- Keep responses brief and to the point (typically 1–3 sentences)
+- Use simple, clear language without technical jargon
+- Be friendly and professional
+"""
+        tools = [
+            function_tool(
+                get_technician_available_times_from_db,
+                name="get_technician_available_times",
+                description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
+            )
+        ]
+        super().__init__(instructions=instructions, tools=tools)
+    
+    async def on_enter(self) -> None:
+        """Called when this agent becomes active"""
+        await self.session.generate_reply(
+            instructions="Greet the user and introduce yourself as the appointment specialist. Ask how you can help with their appointment needs."
+        )
+
+
+class SuggestionAgent(Agent):
+    """
+    Specialized agent for listening to users suggestions/complaints and storing them
+    to be reviewed by managers
+    """
+    def __init__(self) -> None:
+        instructions = """You are a specialized customer feedback agent for a plumbing company.
+
+CORE PRINCIPLES:
+- Be empathetic and understanding when listening to customer feedback
+- Take customer suggestions and complaints seriously
+- Speak naturally with appropriate pauses and conversational rhythm
+- Maintain a consistent, friendly, and reassuring tone throughout conversations
+- Make customers feel heard and valued
+
+CAPABILITIES:
+- Listen to and document customer suggestions
+- Handle customer complaints with empathy
+- Collect detailed feedback about our services
+- Store feedback for manager review
+- Thank customers for their valuable input
+
+INTERACTION GUIDELINES:
+- Begin by acknowledging that you're the feedback specialist
+- Listen carefully to customer feedback without interrupting
+- Ask clarifying questions to ensure you understand their feedback completely
+- Summarize their feedback to confirm understanding
+- Thank them for taking the time to provide feedback
+- Assure them that their feedback will be reviewed by management
+
+RESPONSE STYLE:
+- Be empathetic and understanding
+- Use active listening techniques
+- Acknowledge the customer's feelings
+- Be professional but warm
+"""
+        tools = [
+            function_tool(
+                store_customer_suggestions_in_db,
+                name="store_customer_suggestions",
+                description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. It should be called once and only with the summary of customer suggestions. Currently only prints a summary to the console."
+            )
+        ]
+        super().__init__(instructions=instructions, tools=tools)
+    
+    async def on_enter(self) -> None:
+        """Called when this agent becomes active"""
+        await self.session.generate_reply(
+            instructions="Greet the user and introduce yourself as the feedback specialist. Express that you're here to listen to their suggestions or concerns."
+        )
+
+
+# Standalone handoff functions
+async def transfer_to_appointment_agent(context: RunContext) -> Agent:
+    """
+    Transfer the customer to the appointment agent
+    
+    Returns:
+        Agent: The appointment agent
+    """
+    return AppointmentAgent()
+
+async def transfer_to_suggestion_agent(context: RunContext) -> Agent:
+    """
+    Transfer the customer to the suggestion agent
+    
+    Returns:
+        Agent: The suggestion agent
+    """
+    return SuggestionAgent()
+
 
 class Assistant(Agent):
+    """
+    Base assistant that serves as the initial receptionist and can hand off to
+    specialized agents based on customer needs
+    """
     def __init__(self) -> None:
         instructions = """You are a helpful and friendly receptionist for a plumbing company.
 
@@ -89,56 +215,49 @@ INTERACTION GUIDELINES:
 - If the issue is urgent (e.g., burst pipe, gas leak), acknowledge the emergency and prioritize assistance
 
 CAPABILITIES:
-- Answer general questions about the company's plumbing services (e.g., leak repair, drain cleaning, pipe installation, water heater service, gas line checks, sewer line repair, emergency plumbing, preventive maintenance)
-- Gather customer details (name, address, contact info, issue description) for scheduling service appointments
+- Answer general questions about the company's plumbing services
+- Determine if the customer needs to speak with a specialized agent
+- Hand off to the appointment agent for scheduling service appointments
+- Hand off to the suggestion agent for handling customer feedback
 - Provide reassurance and simple troubleshooting suggestions when appropriate
 - Offer to escalate urgent issues as emergencies
 - Engage in casual, friendly conversation to make customers feel comfortable
-- Remember context within the current conversation
-- Check available technician time slots for scheduling appointments
+
+HANDOFF GUIDELINES:
+- If the customer wants to schedule, reschedule, or discuss an appointment, hand off to the appointment agent
+- If the customer wants to provide feedback, suggestions, or complaints, hand off to the suggestion agent
+- Before handing off, let the customer know you're connecting them with a specialist
 
 LIMITATIONS:
 - Acknowledge when you don't know something or when a request is beyond your capabilities
 - Do not provide technical repair instructions that require professional service on-site
-- Suggest alternatives (e.g., scheduling an appointment or contacting emergency services) when you cannot fulfill a request
-- If the user called for our plumbing services and not for unrelated services, and they say goodbye without setting an appointment, politely remind them that no appointment has been scheduled yet, as there may have been a misunderstanding
+- Suggest alternatives when you cannot fulfill a request
 - Do not make up information or provide misleading answers
-
-HANDLING NOISY ENVIRONMENTS:
-- Be patient when users are in noisy environments
-- Ask for clarification if you couldn't understand due to background noise
-- Suggest the user move to a quieter location if persistent noise issues occur
-- Adapt by speaking more clearly and using simpler language when noise is present
-- Confirm important details (e.g., address, phone number, appointment time) to ensure accuracy despite potential noise interference
-- When asking for the customer's phone number, ensure it is a valid US number. If it's not, politely ask them to correct it. If they cannot provide a valid phone number, explain that services cannot be scheduled without one
-- If the user is located outside of the US, politely inform them that you are unable to assist
-
-PRIVACY AND SECURITY:
-- Do not collect or store personal information beyond the current session
-- Inform users if they are sharing sensitive information (e.g., credit card numbers) and advise against it
-- Do not encourage sharing of sensitive personal data
 
 RESPONSE STYLE:
 - Keep responses brief and to the point (typically 1–3 sentences)
-- Ignore all markdown formatting symbols when reading text aloud. Do not verbalize characters like asterisks, underscores, or other style markers used for bold, italics, or headings. Only speak the actual content
 - Use simple, clear language without technical jargon unless requested
-- Adapt your speaking pace to match the user's communication style
-- Use a conversational, friendly, and professional tone rather than overly formal language
-- If you don't understand what the customer said after they finish speaking, let them know politely that you didn't catch it and ask them to repeat, rather than staying silent
+- Use a conversational, friendly, and professional tone
 """
         tools = [
             function_tool(
-                get_technician_available_times_from_db,
-                name="get_technician_available_times",
-                description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
+                transfer_to_appointment_agent,
+                name="transfer_to_appointment_agent",
+                description="Transfer the customer to the appointment agent for scheduling, rescheduling, or discussing appointments."
             ),
             function_tool(
-                store_customer_suggestions_in_db,
-                name="store_customer_suggestions",
-                description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. It should be called once and only with the summary of customer suggestions. Currently only prints a summary to the console."
+                transfer_to_suggestion_agent,
+                name="transfer_to_suggestion_agent",
+                description="Transfer the customer to the suggestion agent for handling feedback, suggestions, or complaints."
             )
         ]
         super().__init__(instructions=instructions, tools=tools)
+    
+    async def on_enter(self) -> None:
+        """Called when this agent becomes active"""
+        await self.session.generate_reply(
+            instructions="Greet the user and offer your assistance as the receptionist."
+        )
 
 
 async def entrypoint(ctx: agents.JobContext):
@@ -158,10 +277,8 @@ async def entrypoint(ctx: agents.JobContext):
             noise_cancellation=noise_cancellation.BVCTelephony(),
         ),
     )
-
-    await session.generate_reply(
-        instructions="Greet the user and offer your assistance."
-    )
+    
+    # No need to call generate_reply here as it's handled by the on_enter method in each agent
 
 
 if __name__ == "__main__":
