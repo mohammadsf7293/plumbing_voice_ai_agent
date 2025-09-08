@@ -104,7 +104,10 @@ CAPABILITIES:
 - Reschedule or cancel existing appointments
 - Follow up on pending appointments
 - Check available technician time slots
-- Gather all necessary details for appointments (name, address, contact info, issue description)
+- Gather all necessary details for appointments (name, address, contact info, zip code, issue description)
+- While collecting address number, verify that the address is in a valid US address. If the address belongs to another country, inform the user that services are only available in the United States
+- While collecting zip code number, verify that the zip code aligns with the address and is in a valid US zipcode.
+- While collecting contact number, verify that the phone number is in a valid US format. If the number belongs to another country, inform the user that services are only available in the United States
 - Confirm appointment details with customers
 
 INTERACTION GUIDELINES:
@@ -118,6 +121,7 @@ RESPONSE STYLE:
 - Keep responses brief and to the point (typically 1–3 sentences)
 - Use simple, clear language without technical jargon
 - Be friendly and professional
+- When reading text aloud, ignore all markup symbols. Do not verbalize characters such as asterisks, underscores, or brackets. Speak only the plain content
 """
         tools = [
             function_tool(
@@ -291,6 +295,7 @@ RESPONSE STYLE:
 - Keep responses brief and to the point (typically 1–3 sentences)
 - Use simple, clear language without technical jargon unless requested
 - Use a conversational, friendly, and professional tone
+- When reading text aloud, ignore all markup symbols. Do not verbalize characters such as asterisks, underscores, or brackets. Speak only the plain content
 """
         tools = [
             function_tool(
