@@ -56,7 +56,7 @@ async def test_assistant_with_agent_session(mock_agent_session):
 @pytest.mark.asyncio
 async def test_get_technician_available_times_from_db():
     """Test that the get_technician_available_times_from_db function returns the expected list."""
-    # Call the function
+    # Call the function without a technician name
     result = await get_technician_available_times_from_db()
     
     # Check that the result is a list
@@ -65,9 +65,34 @@ async def test_get_technician_available_times_from_db():
     # Check that the list contains the expected number of time slots
     assert len(result) > 0
     
-    # Check that each item in the list is a string
+    # Check that each item in the list is a string in CSV format
     for time_slot in result:
         assert isinstance(time_slot, str)
+        # Check that each string contains a comma (CSV format)
+        assert "," in time_slot
+        # Split the string and check that it has a technician name and a time slot
+        parts = time_slot.split(",", 1)
+        assert len(parts) == 2
+        assert parts[0]  # Technician name is not empty
+        assert parts[1]  # Time slot is not empty
+
+
+@pytest.mark.asyncio
+async def test_get_technician_available_times_from_db_with_filter():
+    """Test that the get_technician_available_times_from_db function correctly filters by technician name."""
+    # Call the function with a specific technician name
+    technician_name = "John Smith"
+    result = await get_technician_available_times_from_db(technician_name)
+    
+    # Check that the result is a list
+    assert isinstance(result, list)
+    
+    # Check that the list contains at least one time slot
+    assert len(result) > 0
+    
+    # Check that all time slots are for the specified technician
+    for time_slot in result:
+        assert time_slot.startswith(f"{technician_name},")
 
 
 @pytest.mark.asyncio

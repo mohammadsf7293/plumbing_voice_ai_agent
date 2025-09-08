@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 import random
-from typing import List
+from typing import List, Optional
 
 from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions, function_tool
@@ -15,20 +15,38 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.local")
 
-async def get_technician_available_times_from_db() -> List[str]:
+async def get_technician_available_times_from_db(technician_name: Optional[str] = None) -> List[str]:
     """
     This function simulates a database call but actually returns a hardcoded list.
     In a real application, you would replace this with logic to retrieve data
     from a real database or external data source.
+    
+    Args:
+        technician_name (str, optional): If provided, only return available times for this technician.
+                                         If None, return available times for all technicians.
+    
+    Returns:
+        List[str]: Available time slots in CSV format: "Technician Name,Time Slot"
     """
-    return [
-        "2025/09/08 9:00 AM - 10:00 AM",
-        "2025/09/08 11:30 AM - 12:30 PM",
-        "2025/09/09 2:00 PM - 3:00 PM",
-        "2025/09/10 4:30 PM - 5:30 PM",
-        "2025/09/11 10:00 AM - 11:00 AM",
-        "2025/09/12 1:00 PM - 2:00 PM"
+    # Mock data of technicians and their available times
+    available_times = [
+        "John Smith,2025/09/08 9:00 AM - 10:00 AM",
+        "John Smith,2025/09/09 2:00 PM - 3:00 PM",
+        "John Smith,2025/09/11 10:00 AM - 11:00 AM",
+        "Maria Garcia,2025/09/08 11:30 AM - 12:30 PM",
+        "Maria Garcia,2025/09/10 4:30 PM - 5:30 PM",
+        "Maria Garcia,2025/09/12 1:00 PM - 2:00 PM",
+        "David Johnson,2025/09/08 1:00 PM - 2:00 PM",
+        "David Johnson,2025/09/10 3:30 PM - 4:30 PM",
+        "David Johnson,2025/09/11 9:30 AM - 10:30 AM"
     ]
+    
+    # If a technician name is provided, filter the results
+    if technician_name:
+        return [time for time in available_times if time.startswith(f"{technician_name},")]
+    
+    # Otherwise, return all available times
+    return available_times
 
 
 class Assistant(Agent):
@@ -83,6 +101,7 @@ PRIVACY AND SECURITY:
 
 RESPONSE STYLE:
 - Keep responses brief and to the point (typically 1–3 sentences)
+- Ignore all markdown formatting symbols when reading text aloud. Do not verbalize characters like asterisks, underscores, or other style markers used for bold, italics, or headings. Only speak the actual content
 - Use simple, clear language without technical jargon unless requested
 - Adapt your speaking pace to match the user's communication style
 - Use a conversational, friendly, and professional tone rather than overly formal language
@@ -92,7 +111,7 @@ RESPONSE STYLE:
             function_tool(
                 get_technician_available_times_from_db,
                 name="get_technician_available_times",
-                description="Get available time slots for technician appointments"
+                description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
             )
         ]
         super().__init__(instructions=instructions, tools=tools)
