@@ -15,6 +15,25 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.local")
 
+async def store_customer_suggestions_in_db(suggestion_summary: str) -> None:
+    """
+    This function stores the final summary of customer suggestions in a database.
+    It should only be called once when all customer suggestions are finished.
+    Currently, it only prints the final summary to the console.
+    In the future, this may be connected to a hook for database storage.
+    
+    Args:
+        suggestion_summary (str): The final summary of all customer suggestions
+    
+    Returns:
+        None
+    """
+    # Print the final summary of customer suggestions to the console
+    if suggestion_summary:
+        print(f"Customer Suggestions Summary: {suggestion_summary}")
+    else:
+        print("No customer suggestions were provided")
+
 async def get_technician_available_times_from_db(technician_name: Optional[str] = None) -> List[str]:
     """
     This function simulates a database call but actually returns a hardcoded list.
@@ -112,6 +131,11 @@ RESPONSE STYLE:
                 get_technician_available_times_from_db,
                 name="get_technician_available_times",
                 description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
+            ),
+            function_tool(
+                store_customer_suggestions_in_db,
+                name="store_customer_suggestions",
+                description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. It should be called once and only with the summary of customer suggestions. Currently only prints a summary to the console."
             )
         ]
         super().__init__(instructions=instructions, tools=tools)
