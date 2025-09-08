@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import random
-from typing import List, Optional
+from typing import List, Optional, Dict
+from dataclasses import dataclass, field
 
 from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions, function_tool, RunContext
@@ -14,6 +15,22 @@ from livekit.plugins import (
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.local")
+
+# Use a single voice ID for all agents to avoid TTS errors
+voices = {
+    "receptionist": "6f84f4b8-58a2-430c-8c79-688dad597532",
+    "appointment_specialist": "156fb8d2-335b-4950-9cb3-a2d33befec77",
+    "suggestions_receptionist": "794f9389-aac1-45b6-b726-9d9369183238",
+    # "checkout": "39b376fc-488e-4d0c-8b37-e00b72059fdd",
+}
+
+@dataclass
+class UserData:
+    """User data that persists across agent handoffs"""
+    # Store the previous agent to maintain context
+    prev_agent: Optional[Agent] = None
+    # Dictionary to store agents by name
+    agents: Dict[str, Agent] = field(default_factory=dict)
 
 async def store_customer_suggestions_in_db(suggestion_summary: str) -> None:
     """
@@ -73,7 +90,7 @@ class AppointmentAgent(Agent):
     following up pending appointments, etc.)
     """
     def __init__(self) -> None:
-        instructions = """You are a specialized appointment agent for a plumbing company.
+        instructions = """You are Naya, a specialized appointment agent for a plumbing company.
 
 CORE PRINCIPLES:
 - Be concise and clear in your responses, optimizing for voice communication
@@ -109,7 +126,11 @@ RESPONSE STYLE:
                 description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
             )
         ]
-        super().__init__(instructions=instructions, tools=tools)
+        super().__init__(
+            instructions=instructions,
+            tools=tools,
+            tts=cartesia.TTS(model="sonic-2", voice=voices["appointment_specialist"])
+        )
     
     async def on_enter(self) -> None:
         """Called when this agent becomes active"""
@@ -124,7 +145,7 @@ class SuggestionAgent(Agent):
     to be reviewed by managers
     """
     def __init__(self) -> None:
-        instructions = """You are a specialized customer feedback agent for a plumbing company.
+        instructions = """You are Helen, a specialized customer feedback agent for a plumbing company.
 
 CORE PRINCIPLES:
 - Be empathetic and understanding when listening to customer feedback
@@ -161,7 +182,11 @@ RESPONSE STYLE:
                 description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. It should be called once and only with the summary of customer suggestions. Currently only prints a summary to the console."
             )
         ]
-        super().__init__(instructions=instructions, tools=tools)
+        super().__init__(
+            instructions=instructions,
+            tools=tools,
+            tts=cartesia.TTS(model="sonic-2", voice=voices["suggestions_receptionist"])
+        )
     
     async def on_enter(self) -> None:
         """Called when this agent becomes active"""
@@ -173,21 +198,49 @@ RESPONSE STYLE:
 # Standalone handoff functions
 async def transfer_to_appointment_agent(context: RunContext) -> Agent:
     """
-    Transfer the customer to the appointment agent
+    Transfer the customer to the appointment agent (Naya)
     
     Returns:
         Agent: The appointment agent
     """
-    return AppointmentAgent()
+    # Get user data from context
+    userdata = context.userdata
+    
+    # Create appointment agent if it doesn't exist
+    if "naya" not in userdata.agents:
+        userdata.agents["naya"] = AppointmentAgent()
+    
+    # Store current agent as previous agent
+    userdata.prev_agent = context.session.current_agent
+    
+    return userdata.agents["naya"]
 
 async def transfer_to_suggestion_agent(context: RunContext) -> Agent:
     """
-    Transfer the customer to the suggestion agent
+    Transfer the customer to the suggestion agent (Helen)
     
     Returns:
         Agent: The suggestion agent
     """
-    return SuggestionAgent()
+    # Get user data from context
+    userdata = context.userdata
+    
+    # Print debug information
+    print("Transferring to suggestion agent (Helen)")
+    print(f"Current agents in userdata: {list(userdata.agents.keys())}")
+    
+    # Create suggestion agent if it doesn't exist
+    if "helen" not in userdata.agents:
+        print("Creating new SuggestionAgent for Helen")
+        userdata.agents["helen"] = SuggestionAgent()
+    
+    # Store current agent as previous agent
+    userdata.prev_agent = context.session.current_agent
+    
+    # Print confirmation
+    print(f"Returning agent: {userdata.agents['helen']}")
+    
+    return userdata.agents["helen"]
 
 
 class Assistant(Agent):
@@ -196,7 +249,7 @@ class Assistant(Agent):
     specialized agents based on customer needs
     """
     def __init__(self) -> None:
-        instructions = """You are a helpful and friendly receptionist for a plumbing company.
+        instructions = """You are Anna, a helpful and friendly receptionist for a plumbing company.
 
 CORE PRINCIPLES:
 - Be concise and clear in your responses, optimizing for voice communication
@@ -251,7 +304,11 @@ RESPONSE STYLE:
                 description="Transfer the customer to the suggestion agent for handling feedback, suggestions, or complaints."
             )
         ]
-        super().__init__(instructions=instructions, tools=tools)
+        super().__init__(
+            instructions=instructions,
+            tools=tools,
+            tts=cartesia.TTS(model="sonic-2", voice=voices["receptionist"])
+        )
     
     async def on_enter(self) -> None:
         """Called when this agent becomes active"""
@@ -261,17 +318,31 @@ RESPONSE STYLE:
 
 
 async def entrypoint(ctx: agents.JobContext):
+    # Create user data for the session
+    userdata = UserData()
+    
+    # Create the main assistant (Anna)
+    userdata.agents["anna"] = Assistant()
+    
+    # Pre-initialize other agents to ensure they're available
+    userdata.agents["naya"] = AppointmentAgent()
+    userdata.agents["helen"] = SuggestionAgent()
+    
+    # Print debug information
+    print(f"Initialized agents: {list(userdata.agents.keys())}")
+    
+    # Create session with a single voice for all agents
     session = AgentSession(
+        userdata=userdata,
         stt=deepgram.STT(model="nova-3", language="en"),
         llm=openai.LLM(model="gpt-4o-mini"),
-        tts=cartesia.TTS(model="sonic-2", voice="f786b574-daa5-4673-aa0c-cbe3e8534c02"),
         vad=silero.VAD.load(),
         turn_detection=MultilingualModel(),
     )
 
     await session.start(
         room=ctx.room,
-        agent=Assistant(),
+        agent=userdata.agents["anna"],
         room_input_options=RoomInputOptions(
             # Using BVCTelephony for better noise cancellation on input
             noise_cancellation=noise_cancellation.BVCTelephony(),
