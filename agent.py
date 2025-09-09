@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 import random
+from random import randint
 from typing import List, Optional, Dict
 from dataclasses import dataclass, field
 
@@ -31,6 +32,30 @@ class UserData:
     prev_agent: Optional[Agent] = None
     # Dictionary to store agents by name
     agents: Dict[str, Agent] = field(default_factory=dict)
+
+async def book_appointment_in_db(customer_name: str, agent_name: str, timeslot: str) -> str:
+    """
+    Books an appointment in the database and generates a tracking ID.
+    
+    Args:
+        customer_name (str): The name of the customer
+        agent_name (str): The name of the agent handling the booking
+        timeslot (str): The selected appointment timeslot
+    
+    Returns:
+        str: Confirmation message with appointment tracking ID
+    """
+    # Generate a random 6-digit appointment ID
+    appointment_id = randint(100000, 999999)
+    
+    # Print confirmation to logs
+    print(f"APPOINTMENT CONFIRMED - ID: {appointment_id}")
+    print(f"Customer: {customer_name}")
+    print(f"Agent: {agent_name}")
+    print(f"Timeslot: {timeslot}")
+    
+    # Return confirmation message with tracking ID
+    return f"Your appointment has been confirmed. Your tracking ID is {appointment_id}. Please keep this number for your records."
 
 async def store_customer_suggestions_in_db(suggestion_summary: str) -> None:
     """
@@ -128,6 +153,11 @@ RESPONSE STYLE:
                 get_technician_available_times_from_db,
                 name="get_technician_available_times",
                 description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
+            ),
+            function_tool(
+                book_appointment_in_db,
+                name="book_appointment_in_db",
+                description="Book an appointment in the database and generate a tracking ID. Call this when the customer has selected a timeslot and is ready to book."
             )
         ]
         super().__init__(
