@@ -59,6 +59,60 @@ async def cancel_appointments_by_tracking_ids(tracking_ids: List[int]) -> str:
     else:
         return "No tracking IDs provided for cancellation."
 
+async def get_finished_appointments_for_customer(customer_name: str) -> List[str]:
+    """
+    Finds all past/completed appointments for a given customer.
+    
+    Args:
+        customer_name (str): The name of the customer to find appointments for
+    
+    Returns:
+        List[str]: List of past appointments in format "Tracking ID,Technician Name,Time Slot"
+    """
+    # This is a mock implementation that generates random past appointments
+    # In a real application, this would query a database
+    
+    # Generate a random number of appointments (0-3)
+    num_appointments = random.randint(0, 3)
+    
+    if num_appointments == 0:
+        return []
+    
+    # List of technicians
+    technicians = ["John Smith", "Maria Garcia", "David Johnson"]
+    
+    # Generate random appointments
+    appointments = []
+    for _ in range(num_appointments):
+        # Generate a random 6-digit tracking ID
+        tracking_id = str(randint(100000, 999999))
+        
+        # Select a random technician
+        technician = random.choice(technicians)
+        
+        # Generate a random date in the past 30 days
+        days_ago = random.randint(1, 30)
+        appointment_date = f"2025/08/{8 + days_ago}"
+        
+        # Generate a random time
+        hour = random.randint(9, 16)
+        minute = random.choice([0, 30])
+        end_hour = hour + 1
+        
+        # Format the time slot
+        if hour < 12:
+            time_slot = f"{appointment_date} {hour}:{minute:02d} AM - {end_hour}:{minute:02d} AM"
+        elif hour == 12:
+            time_slot = f"{appointment_date} {hour}:{minute:02d} PM - {end_hour}:{minute:02d} PM"
+        else:
+            time_slot = f"{appointment_date} {hour-12}:{minute:02d} PM - {end_hour-12}:{minute:02d} PM"
+        
+        # Create the appointment string
+        appointment = f"{tracking_id},{technician},{time_slot}"
+        appointments.append(appointment)
+    
+    return appointments
+
 async def find_active_appointments_for_customer(customer_name: str) -> List[str]:
     """
     Finds all active appointments for a given customer.
@@ -137,7 +191,7 @@ async def book_appointment_in_db(customer_name: str, agent_name: str, timeslot: 
     # Return confirmation message with tracking ID
     return f"Your appointment has been confirmed. Your tracking ID is {appointment_id}. Please keep this number for your records."
 
-async def store_customer_suggestions_in_db(suggestion_summary: str) -> None:
+async def store_customer_suggestions_in_db(suggestion_summary: str, appointment_id: Optional[str] = None) -> None:
     """
     This function stores the final summary of customer suggestions in a database.
     It should only be called once when all customer suggestions are finished.
@@ -146,13 +200,17 @@ async def store_customer_suggestions_in_db(suggestion_summary: str) -> None:
     
     Args:
         suggestion_summary (str): The final summary of all customer suggestions
+        appointment_id (Optional[str]): The tracking ID of the appointment if the feedback is related to a specific appointment
     
     Returns:
         None
     """
     # Print the final summary of customer suggestions to the console
     if suggestion_summary:
-        print(f"Customer Suggestions Summary: {suggestion_summary}")
+        if appointment_id:
+            print(f"Customer Suggestions Summary for Appointment #{appointment_id}: {suggestion_summary}")
+        else:
+            print(f"Customer Suggestions Summary: {suggestion_summary}")
     else:
         print("No customer suggestions were provided")
 
@@ -292,11 +350,16 @@ CAPABILITIES:
 - Listen to and document customer suggestions
 - Handle customer complaints with empathy
 - Collect detailed feedback about our services
+- Check if feedback is related to a specific past appointment
 - Store feedback for manager review
 - Thank customers for their valuable input
 
 INTERACTION GUIDELINES:
 - Begin by acknowledging that you're the feedback specialist
+- Ask if their feedback is related to a specific appointment they've had in the past
+- If yes, use the get_finished_appointments_for_customer function to find their past appointments
+- Ask them to identify which appointment their feedback is about
+- Include the appointment tracking ID when storing the feedback
 - Listen carefully to customer feedback without interrupting
 - Ask clarifying questions to ensure you understand their feedback completely
 - Summarize their feedback to confirm understanding
@@ -313,7 +376,12 @@ RESPONSE STYLE:
             function_tool(
                 store_customer_suggestions_in_db,
                 name="store_customer_suggestions",
-                description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. It should be called once and only with the summary of customer suggestions. Currently only prints a summary to the console."
+                description="Store customer suggestions in the database. This function should only be called when the customer suggestions are finished. Include the appointment ID if the feedback is related to a specific appointment. It should be called once and only with the summary of customer suggestions."
+            ),
+            function_tool(
+                get_finished_appointments_for_customer,
+                name="get_finished_appointments_for_customer",
+                description="Find all past/completed appointments for a given customer. Use this when a customer wants to provide feedback about a specific past appointment."
             )
         ]
         super().__init__(
