@@ -1,11 +1,13 @@
 from dotenv import load_dotenv
 import random
 from random import randint
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Literal
+from enum import Enum
 from dataclasses import dataclass, field
 
 from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions, function_tool, RunContext
+import re
 from livekit.plugins import (
     openai,
     cartesia,
@@ -17,13 +19,42 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.local")
 
+def clean_text(text: str) -> str:
+    """Remove markdown symbols from text before TTS processing.
+    
+    Args:
+        text (str): The text containing markdown symbols
+        
+    Returns:
+        str: Clean text with markdown symbols removed
+    """
+    return re.sub(r'[*_#`~>-]', '', text)
+class CleanTTS(cartesia.TTS):
+    """TTS class that cleans markdown symbols from text before processing"""
+    
+    async def say(self, text: str, **kwargs: any) -> None:
+        """Clean markdown symbols from text before TTS processing
+        
+        Args:
+            text (str): The text to speak
+            **kwargs: Additional arguments passed to parent say method
+        """
+        clean = clean_text(text)
+        await super().say(clean, **kwargs)
+
 # Use a single voice ID for all agents to avoid TTS errors
 voices = {
     "receptionist": "6f84f4b8-58a2-430c-8c79-688dad597532",
     "appointment_specialist": "156fb8d2-335b-4950-9cb3-a2d33befec77",
     "suggestions_receptionist": "794f9389-aac1-45b6-b726-9d9369183238",
-    # "checkout": "39b376fc-488e-4d0c-8b37-e00b72059fdd",
+    "business_development": "39b376fc-488e-4d0c-8b37-e00b72059fdd",
 }
+
+# Request type enum
+class RequestType(str, Enum):
+    SELLING_SERVICES = "SELLING_SERVICES"
+    EMPLOYMENT_REQUEST = "EMPLOYMENT_REQUEST"
+    OTHER = "OTHER"
 
 @dataclass
 class UserData:
@@ -191,6 +222,38 @@ async def book_appointment_in_db(customer_name: str, agent_name: str, timeslot: 
     # Return confirmation message with tracking ID
     return f"Your appointment has been confirmed. Your tracking ID is {appointment_id}. Please keep this number for your records."
 
+async def store_miscellaneous_requests_in_db(
+    requester_name: str,
+    requester_phone: str,
+    requester_email: str,
+    request_type: RequestType,
+    request_summary: str
+) -> str:
+    """
+    Stores miscellaneous business development requests in the database.
+    Currently, it only prints the request details to the console.
+    
+    Args:
+        requester_name (str): The name of the requester
+        requester_phone (str): The phone number of the requester
+        requester_email (str): The email address of the requester
+        request_type (RequestType): The type of request (SELLING_SERVICES, EMPLOYMENT_REQUEST, OTHER)
+        request_summary (str): A summary of the request
+    
+    Returns:
+        str: Confirmation message
+    """
+    # Print request details to the console
+    print(f"BUSINESS DEVELOPMENT REQUEST")
+    print(f"Requester: {requester_name}")
+    print(f"Phone: {requester_phone}")
+    print(f"Email: {requester_email}")
+    print(f"Request Type: {request_type}")
+    print(f"Summary: {request_summary}")
+    
+    # Return confirmation message
+    return f"Thank you. Your {request_type.lower().replace('_', ' ')} has been recorded. We will review it and get back to you if needed."
+
 async def store_customer_suggestions_in_db(suggestion_summary: str, appointment_id: Optional[str] = None) -> None:
     """
     This function stores the final summary of customer suggestions in a database.
@@ -311,7 +374,7 @@ RESPONSE STYLE:
         super().__init__(
             instructions=instructions,
             tools=tools,
-            tts=cartesia.TTS(model="sonic-2", voice=voices["appointment_specialist"])
+            tts=CleanTTS(model="sonic-2", voice=voices["appointment_specialist"])
         )
     
     async def on_enter(self) -> None:
@@ -371,6 +434,7 @@ RESPONSE STYLE:
 - Use active listening techniques
 - Acknowledge the customer's feelings
 - Be professional but warm
+- When reading text aloud, ignore all markup symbols. Do not verbalize characters such as asterisks, underscores, or brackets. Speak only the plain content
 """
         tools = [
             function_tool(
@@ -387,7 +451,7 @@ RESPONSE STYLE:
         super().__init__(
             instructions=instructions,
             tools=tools,
-            tts=cartesia.TTS(model="sonic-2", voice=voices["suggestions_receptionist"])
+            tts=CleanTTS(model="sonic-2", voice=voices["suggestions_receptionist"])
         )
     
     async def on_enter(self) -> None:
@@ -406,6 +470,93 @@ RESPONSE STYLE:
                 instructions="Greet the user and introduce yourself as the feedback specialist. Express that you're here to listen to their suggestions or concerns."
             )
 
+
+class BusinessDevelopmentAgent(Agent):
+    """
+    Specialized agent for handling business development requests, including
+    service offerings, employment requests, and partnership opportunities
+    """
+    def __init__(self) -> None:
+        instructions = """You are Marcus, a specialized business development agent for a plumbing company.
+
+CORE PRINCIPLES:
+- Be professional and courteous when handling business inquiries
+- Evaluate the relevance of requests before storing them
+- Collect complete and accurate information from callers with relevant requests
+- Speak naturally with appropriate pauses and conversational rhythm
+- Maintain a consistent, professional tone throughout conversations
+- Be thorough in collecting all necessary details
+- Protect the company from irrelevant or potentially malicious requests
+
+CAPABILITIES:
+- Handle inquiries from companies wanting to sell services to us
+- Process employment requests from job seekers
+- Manage partnership or deal proposals from other companies
+- Collect contact information and request details
+- Verify that provided contact information is valid
+- Evaluate request relevance and filter out inappropriate requests
+
+RELEVANCE CRITERIA:
+- Service offerings must be related to plumbing, construction, maintenance, or business operations such as helping us with marketing tools, hiring new staff, a new software which can help our company management or sales, etc.
+- Employment requests must be for positions that a plumbing company would reasonably have
+- All requests must be professional, legitimate, and non-malicious
+- Requests must be specific and detailed enough to evaluate
+
+INTERACTION GUIDELINES:
+- Begin by acknowledging that you're the business development specialist
+- Determine the type of request (selling services, employment request, or other)
+- FIRST EVALUATE if the request is relevant to a plumbing company using the relevance criteria
+- If the request is NOT relevant:
+  * Politely explain that their request doesn't align with the company's needs
+  * Thank them for their interest but decline to proceed further
+  * DO NOT collect or store their information
+- If the request IS relevant:
+  * Collect the requester's name, phone number, and email address
+  * Verify that the phone number is in a valid format
+  * Verify that the email address is in a valid format
+  * For service offerings: collect details about the service, pricing, and company
+  * For employment requests: collect educational background, age, work experience, and skills
+  * For partnership proposals: collect details about the proposed partnership
+  * Summarize the information collected to confirm accuracy
+  * Thank them for their interest and explain that their request will be reviewed
+  * Store their information using the store_miscellaneous_requests_in_db function
+
+RESPONSE STYLE:
+- Be professional and business-like
+- Use clear, concise language
+- Maintain a helpful and engaged tone
+- Be thorough in information collection
+- Be firm but polite when declining irrelevant requests
+- When reading text aloud, ignore all markup symbols. Do not verbalize characters such as asterisks, underscores, or brackets. Speak only the plain content
+"""
+        tools = [
+            function_tool(
+                store_miscellaneous_requests_in_db,
+                name="store_miscellaneous_requests_in_db",
+                description="Store business development requests in the database. Use this to record service offerings, employment requests, or partnership proposals after collecting all necessary information."
+            )
+        ]
+        super().__init__(
+            instructions=instructions,
+            tools=tools,
+            tts=CleanTTS(model="sonic-2", voice=voices["business_development"])
+        )
+    
+    async def on_enter(self) -> None:
+        """Called when this agent becomes active"""
+        # Get user data to check for problem description
+        userdata = self.session.userdata
+        
+        if userdata.problem_description:
+            # Use the problem description in the greeting
+            await self.session.generate_reply(
+                instructions=f"Greet the user and introduce yourself as the business development specialist. Mention that you're here to help with their {userdata.problem_description}."
+            )
+        else:
+            # Default greeting if no problem description is available
+            await self.session.generate_reply(
+                instructions="Greet the user and introduce yourself as the business development specialist. Ask how you can assist them with their business inquiry."
+            )
 
 # Standalone handoff functions
 async def transfer_to_appointment_agent(context: RunContext, problem_description: Optional[str] = None) -> Agent:
@@ -471,6 +622,42 @@ async def transfer_to_suggestion_agent(context: RunContext, problem_description:
     
     return userdata.agents["helen"]
 
+async def transfer_to_business_development_agent(context: RunContext, problem_description: Optional[str] = None) -> Agent:
+    """
+    Transfer the customer to the business development agent (Marcus)
+    
+    Args:
+        context (RunContext): The run context
+        problem_description (Optional[str]): Description of the business inquiry
+    
+    Returns:
+        Agent: The business development agent
+    """
+    # Get user data from context
+    userdata = context.userdata
+    
+    # Store problem description for context passing
+    if problem_description:
+        userdata.problem_description = problem_description
+    
+    # Print debug information
+    print("Transferring to business development agent (Marcus)")
+    print(f"Current agents in userdata: {list(userdata.agents.keys())}")
+    print(f"Problem description: {userdata.problem_description}")
+    
+    # Create business development agent if it doesn't exist
+    if "marcus" not in userdata.agents:
+        print("Creating new BusinessDevelopmentAgent for Marcus")
+        userdata.agents["marcus"] = BusinessDevelopmentAgent()
+    
+    # Store current agent as previous agent
+    userdata.prev_agent = context.session.current_agent
+    
+    # Print confirmation
+    print(f"Returning agent: {userdata.agents['marcus']}")
+    
+    return userdata.agents["marcus"]
+
 
 class Assistant(Agent):
     """
@@ -501,6 +688,7 @@ CAPABILITIES:
 - Determine if the customer needs to speak with a specialized agent
 - Hand off to the appointment agent for scheduling service appointments
 - Hand off to the suggestion agent for handling customer feedback
+- Hand off to the business development agent for business inquiries
 - Provide reassurance and simple troubleshooting suggestions when appropriate
 - Offer to escalate urgent issues as emergencies
 - Engage in casual, friendly conversation to make customers feel comfortable
@@ -508,6 +696,7 @@ CAPABILITIES:
 HANDOFF GUIDELINES:
 - If the customer wants to schedule, reschedule, or discuss an appointment, hand off to the appointment agent
 - If the customer wants to provide feedback, suggestions, or complaints, hand off to the suggestion agent
+- If the customer is from another company wanting to sell services, seeking employment, or proposing a partnership, hand off to the business development agent
 - Before handing off, let the customer know you're connecting them with a specialist
 
 LIMITATIONS:
@@ -532,12 +721,17 @@ RESPONSE STYLE:
                 transfer_to_suggestion_agent,
                 name="transfer_to_suggestion_agent",
                 description="Transfer the customer to the suggestion agent for handling feedback, suggestions, or complaints. Include a description of the feedback topic to provide context."
+            ),
+            function_tool(
+                transfer_to_business_development_agent,
+                name="transfer_to_business_development_agent",
+                description="Transfer the customer to the business development agent for handling business inquiries, including service offerings, employment requests, or partnership proposals. Include a description of the business inquiry to provide context."
             )
         ]
         super().__init__(
             instructions=instructions,
             tools=tools,
-            tts=cartesia.TTS(model="sonic-2", voice=voices["receptionist"])
+            tts=CleanTTS(model="sonic-2", voice=voices["receptionist"])
         )
     
     async def on_enter(self) -> None:
@@ -557,6 +751,7 @@ async def entrypoint(ctx: agents.JobContext):
     # Pre-initialize other agents to ensure they're available
     userdata.agents["naya"] = AppointmentAgent()
     userdata.agents["helen"] = SuggestionAgent()
+    userdata.agents["marcus"] = BusinessDevelopmentAgent()
     
     # Print debug information
     print(f"Initialized agents: {list(userdata.agents.keys())}")

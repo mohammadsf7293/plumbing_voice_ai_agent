@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent import Assistant, get_technician_available_times_from_db
+from agent import Assistant, get_technician_available_times_from_db, clean_text
 
 
 @pytest.mark.asyncio
@@ -117,3 +117,29 @@ async def test_assistant_has_technician_times_tool():
             tool_found = True
             break
     assert tool_found, "get_technician_available_times tool not found in assistant tools"
+
+
+def test_clean_text():
+    """Test that the clean_text function correctly removes markdown characters."""
+    # Test basic markdown symbols
+    assert clean_text("**bold**") == "bold"
+    assert clean_text("_italic_") == "italic"
+    assert clean_text("# heading") == " heading"
+    assert clean_text("`code`") == "code"
+    assert clean_text("~strikethrough~") == "strikethrough"
+    assert clean_text("> quote") == " quote"
+    assert clean_text("- list item") == " list item"
+    
+    # Test multiple symbols
+    assert clean_text("**_bold italic_**") == "bold italic"
+    assert clean_text("# `code heading`") == " code heading"
+    
+    # Test symbols in middle of text
+    assert clean_text("This is *bold* text") == "This is bold text"
+    assert clean_text("Before-after") == "Beforeafter"
+    
+    # Test empty string
+    assert clean_text("") == ""
+    
+    # Test string with only symbols
+    assert clean_text("*_#`~>-") == ""
