@@ -32,6 +32,8 @@ class UserData:
     prev_agent: Optional[Agent] = None
     # Dictionary to store agents by name
     agents: Dict[str, Agent] = field(default_factory=dict)
+    # Store problem description for context passing
+    problem_description: Optional[str] = None
 
 async def cancel_appointments_by_tracking_ids(tracking_ids: List[int]) -> str:
     """
@@ -256,9 +258,19 @@ RESPONSE STYLE:
     
     async def on_enter(self) -> None:
         """Called when this agent becomes active"""
-        await self.session.generate_reply(
-            instructions="Greet the user and introduce yourself as the appointment specialist. Ask how you can help with their appointment needs."
-        )
+        # Get user data to check for problem description
+        userdata = self.session.userdata
+        
+        if userdata.problem_description:
+            # Use the problem description in the greeting
+            await self.session.generate_reply(
+                instructions=f"Greet the user and introduce yourself as the appointment specialist. Mention that you're here to help with their {userdata.problem_description}."
+            )
+        else:
+            # Default greeting if no problem description is available
+            await self.session.generate_reply(
+                instructions="Greet the user and introduce yourself as the appointment specialist. Ask how you can help with their appointment needs."
+            )
 
 
 class SuggestionAgent(Agent):
@@ -312,21 +324,39 @@ RESPONSE STYLE:
     
     async def on_enter(self) -> None:
         """Called when this agent becomes active"""
-        await self.session.generate_reply(
-            instructions="Greet the user and introduce yourself as the feedback specialist. Express that you're here to listen to their suggestions or concerns."
-        )
+        # Get user data to check for problem description
+        userdata = self.session.userdata
+        
+        if userdata.problem_description:
+            # Use the problem description in the greeting
+            await self.session.generate_reply(
+                instructions=f"Greet the user and introduce yourself as the feedback specialist. Mention that you're here to listen to their feedback about {userdata.problem_description}."
+            )
+        else:
+            # Default greeting if no problem description is available
+            await self.session.generate_reply(
+                instructions="Greet the user and introduce yourself as the feedback specialist. Express that you're here to listen to their suggestions or concerns."
+            )
 
 
 # Standalone handoff functions
-async def transfer_to_appointment_agent(context: RunContext) -> Agent:
+async def transfer_to_appointment_agent(context: RunContext, problem_description: Optional[str] = None) -> Agent:
     """
     Transfer the customer to the appointment agent (Naya)
+    
+    Args:
+        context (RunContext): The run context
+        problem_description (Optional[str]): Description of the customer's problem
     
     Returns:
         Agent: The appointment agent
     """
     # Get user data from context
     userdata = context.userdata
+    
+    # Store problem description for context passing
+    if problem_description:
+        userdata.problem_description = problem_description
     
     # Create appointment agent if it doesn't exist
     if "naya" not in userdata.agents:
@@ -337,9 +367,13 @@ async def transfer_to_appointment_agent(context: RunContext) -> Agent:
     
     return userdata.agents["naya"]
 
-async def transfer_to_suggestion_agent(context: RunContext) -> Agent:
+async def transfer_to_suggestion_agent(context: RunContext, problem_description: Optional[str] = None) -> Agent:
     """
     Transfer the customer to the suggestion agent (Helen)
+    
+    Args:
+        context (RunContext): The run context
+        problem_description (Optional[str]): Description of the customer's problem or feedback topic
     
     Returns:
         Agent: The suggestion agent
@@ -347,9 +381,14 @@ async def transfer_to_suggestion_agent(context: RunContext) -> Agent:
     # Get user data from context
     userdata = context.userdata
     
+    # Store problem description for context passing
+    if problem_description:
+        userdata.problem_description = problem_description
+    
     # Print debug information
     print("Transferring to suggestion agent (Helen)")
     print(f"Current agents in userdata: {list(userdata.agents.keys())}")
+    print(f"Problem description: {userdata.problem_description}")
     
     # Create suggestion agent if it doesn't exist
     if "helen" not in userdata.agents:
@@ -419,12 +458,12 @@ RESPONSE STYLE:
             function_tool(
                 transfer_to_appointment_agent,
                 name="transfer_to_appointment_agent",
-                description="Transfer the customer to the appointment agent for scheduling, rescheduling, or discussing appointments."
+                description="Transfer the customer to the appointment agent for scheduling, rescheduling, or discussing appointments. Include a description of the customer's problem to provide context."
             ),
             function_tool(
                 transfer_to_suggestion_agent,
                 name="transfer_to_suggestion_agent",
-                description="Transfer the customer to the suggestion agent for handling feedback, suggestions, or complaints."
+                description="Transfer the customer to the suggestion agent for handling feedback, suggestions, or complaints. Include a description of the feedback topic to provide context."
             )
         ]
         super().__init__(
