@@ -33,6 +33,30 @@ class UserData:
     # Dictionary to store agents by name
     agents: Dict[str, Agent] = field(default_factory=dict)
 
+async def cancel_appointments_by_tracking_ids(tracking_ids: List[int]) -> str:
+    """
+    Cancels appointments with the given tracking IDs.
+    
+    Args:
+        tracking_ids (List[int]): List of 6-digit tracking IDs for appointments to cancel
+    
+    Returns:
+        str: Confirmation message
+    """
+    # Print cancellation information to the console
+    if tracking_ids:
+        print(f"APPOINTMENTS CANCELLED - Tracking IDs: {', '.join(map(str, tracking_ids))}")
+        
+        # In a real application, this would update a database to mark these appointments as cancelled
+        
+        # Return confirmation message
+        if len(tracking_ids) == 1:
+            return f"Your appointment with tracking ID {tracking_ids[0]} has been cancelled."
+        else:
+            return f"Your appointments with tracking IDs {', '.join(map(str, tracking_ids))} have been cancelled."
+    else:
+        return "No tracking IDs provided for cancellation."
+
 async def find_active_appointments_for_customer(customer_name: str) -> List[str]:
     """
     Finds all active appointments for a given customer.
@@ -217,6 +241,11 @@ RESPONSE STYLE:
                 find_active_appointments_for_customer,
                 name="find_active_appointments_for_customer",
                 description="Find all active appointments for a given customer. Use this when a customer wants to check their existing appointments."
+            ),
+            function_tool(
+                cancel_appointments_by_tracking_ids,
+                name="cancel_appointments_by_tracking_ids",
+                description="Cancel appointments with the given tracking IDs. To modify an appointment, cancel the existing one and book a new one with the updated information."
             )
         ]
         super().__init__(
