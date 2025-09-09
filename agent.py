@@ -33,6 +33,60 @@ class UserData:
     # Dictionary to store agents by name
     agents: Dict[str, Agent] = field(default_factory=dict)
 
+async def find_active_appointments_for_customer(customer_name: str) -> List[str]:
+    """
+    Finds all active appointments for a given customer.
+    
+    Args:
+        customer_name (str): The name of the customer to find appointments for
+    
+    Returns:
+        List[str]: List of active appointments in format "Tracking ID,Technician Name,Time Slot"
+    """
+    # This is a mock implementation that generates random appointments
+    # In a real application, this would query a database
+    
+    # Generate a random number of appointments (0-3)
+    num_appointments = random.randint(0, 3)
+    
+    if num_appointments == 0:
+        return []
+    
+    # List of technicians
+    technicians = ["John Smith", "Maria Garcia", "David Johnson"]
+    
+    # Generate random appointments
+    appointments = []
+    for _ in range(num_appointments):
+        # Generate a random 6-digit tracking ID
+        tracking_id = str(randint(100000, 999999))
+        
+        # Select a random technician
+        technician = random.choice(technicians)
+        
+        # Generate a random date in the next 14 days
+        days_ahead = random.randint(1, 14)
+        appointment_date = f"2025/09/{8 + days_ahead}"
+        
+        # Generate a random time
+        hour = random.randint(9, 16)
+        minute = random.choice([0, 30])
+        end_hour = hour + 1
+        
+        # Format the time slot
+        if hour < 12:
+            time_slot = f"{appointment_date} {hour}:{minute:02d} AM - {end_hour}:{minute:02d} AM"
+        elif hour == 12:
+            time_slot = f"{appointment_date} {hour}:{minute:02d} PM - {end_hour}:{minute:02d} PM"
+        else:
+            time_slot = f"{appointment_date} {hour-12}:{minute:02d} PM - {end_hour-12}:{minute:02d} PM"
+        
+        # Create the appointment string
+        appointment = f"{tracking_id},{technician},{time_slot}"
+        appointments.append(appointment)
+    
+    return appointments
+
 async def book_appointment_in_db(customer_name: str, agent_name: str, timeslot: str) -> str:
     """
     Books an appointment in the database and generates a tracking ID.
@@ -130,9 +184,9 @@ CAPABILITIES:
 - Follow up on pending appointments
 - Check available technician time slots
 - Gather all necessary details for appointments (name, address, contact info, zip code, issue description)
-- While collecting address number, verify that the address is in a valid US address. If the address belongs to another country, inform the user that services are only available in the United States
-- While collecting zip code number, verify that the zip code aligns with the address and is in a valid US zipcode.
-- While collecting contact number, verify that the phone number is in a valid US format. If the number belongs to another country, inform the user that services are only available in the United States
+- While collecting address number, verify that the address is a valid US address. If the address belongs to another country, inform the user that services are only available in the United States
+- While collecting zip code number, verify that the zip code is a valid US zip code.
+- While collecting contact number, verify that the phone number is in a valid US format.
 - Confirm appointment details with customers
 
 INTERACTION GUIDELINES:
@@ -158,6 +212,11 @@ RESPONSE STYLE:
                 book_appointment_in_db,
                 name="book_appointment_in_db",
                 description="Book an appointment in the database and generate a tracking ID. Call this when the customer has selected a timeslot and is ready to book."
+            ),
+            function_tool(
+                find_active_appointments_for_customer,
+                name="find_active_appointments_for_customer",
+                description="Find all active appointments for a given customer. Use this when a customer wants to check their existing appointments."
             )
         ]
         super().__init__(
