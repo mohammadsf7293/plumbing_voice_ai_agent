@@ -347,13 +347,13 @@ RESPONSE STYLE:
 - Keep responses brief and to the point (typically 1–3 sentences)
 - Use simple, clear language without technical jargon
 - Be friendly and professional
-- When reading text aloud, ignore all markup symbols. Do not verbalize characters such as asterisks, underscores, or brackets. Speak only the plain content
+- Don't read symbols like * as asterisks. When you encounter and want to read asterisks, just ignore pronouncing them
 """
         tools = [
             function_tool(
                 get_technician_available_times_from_db,
                 name="get_technician_available_times",
-                description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician."
+                description="Get available time slots for technician appointments. If a technician name is provided, only returns times for that technician. While reading the names, don't read * characters. dont' say asterisk please"
             ),
             function_tool(
                 book_appointment_in_db,
