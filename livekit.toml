@@ -2,4 +2,5 @@
   subdomain = "mysamplevoiceaiapp-oyxcnu87"
 
 [agent]
-  id = "CA_dxTDz8CCeYrY"
+  id = "CA_V4k7nCEtuBWH"
+  regions = ["us-east"]
