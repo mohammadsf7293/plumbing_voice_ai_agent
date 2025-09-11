@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from livekit.agents import AgentSession
+from livekit.plugins import openai
 
 from agent import Assistant, get_technician_available_times_from_db, clean_text
 
@@ -12,45 +13,44 @@ async def test_assistant_initialization():
     
     # Check that the instructions are set correctly
     # We'll just check that the instructions contain a specific phrase rather than the entire text
-    assert "You are a helpful and friendly receptionist for a plumbing company." in assistant.instructions
+    assert "You are Anna, a helpful and friendly receptionist for a plumbing company." in assistant.instructions
 
 
 @pytest.mark.asyncio
-async def test_assistant_with_custom_instructions():
-    """Test that the Assistant class can be initialized with custom instructions."""
-    # Create an instance of the Assistant class with custom instructions
-    custom_instructions = "You are a customer service assistant."
-    assistant = Assistant()
-    
-    # Since instructions is a property without a setter, we need to modify the underlying attribute
-    # or create a new instance with the custom instructions
-    assistant._instructions = custom_instructions  # Directly modify the protected attribute
-    
-    # Check that the instructions are set correctly
-    assert assistant.instructions == custom_instructions
+async def test_assistant_greeting_behavior():
+    """Test that the Assistant provides appropriate greeting behavior."""
+    async with (
+        openai.LLM(model="gpt-4o-mini") as llm,
+        AgentSession(llm=llm) as session,
+    ):
+        await session.start(Assistant())
+        
+        result = await session.run(user_input="Hello")
+        
+        await result.expect.next_event().is_message(role="assistant").judge(
+            llm, intent="Provides a friendly greeting as Anna the receptionist and offers assistance."
+        )
+        result.expect.no_more_events()
 
 
 @pytest.mark.asyncio
-async def test_assistant_with_agent_session(mock_agent_session):
-    """Test that the Assistant class works with an AgentSession."""
-    # Create an instance of the Assistant class
-    assistant = Assistant()
-    
-    # Create a mock user message
-    user_message = "Hello, how can you help me?"
-    
-    # Create a mock session.run result
-    mock_result = AsyncMock()
-    mock_agent_session.run.return_value = mock_result
-    
-    # Simulate running the agent with a user message
-    result = await mock_agent_session.run(user_input=user_message)
-    
-    # Check that the session.run method was called
-    mock_agent_session.run.assert_called_once_with(user_input=user_message)
-    
-    # Check that the result is as expected
-    assert result == mock_result
+async def test_assistant_handoff_behavior():
+    """Test that the Assistant correctly identifies when to hand off to specialists."""
+    async with (
+        openai.LLM(model="gpt-4o-mini") as llm,
+        AgentSession(llm=llm) as session,
+    ):
+        await session.start(Assistant())
+        
+        # Test appointment handoff
+        result = await session.run(user_input="I need to schedule a plumbing appointment")
+        
+        result.expect.next_event().is_function_call(name="transfer_to_appointment_agent")
+        result.expect.next_event().is_function_call_output()
+        await result.expect.next_event().is_message(role="assistant").judge(
+            llm, intent="Acknowledges the appointment request and mentions connecting to a specialist."
+        )
+        result.expect.no_more_events()
 
 
 @pytest.mark.asyncio
