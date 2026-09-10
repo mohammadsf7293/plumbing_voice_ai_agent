@@ -5,6 +5,7 @@ from livekit.plugins import openai
 from agent import Assistant, AppointmentAgent, SuggestionAgent, BusinessDevelopmentAgent
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_greeting():
     """Test that Anna (receptionist) provides a friendly greeting and offers assistance."""
@@ -12,7 +13,7 @@ async def test_assistant_greeting():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="Hello")
         
@@ -22,6 +23,7 @@ async def test_assistant_greeting():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_appointment_handoff():
     """Test that Anna correctly hands off to appointment agent when user wants to schedule."""
@@ -29,7 +31,7 @@ async def test_assistant_appointment_handoff():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I need to schedule a plumbing appointment")
         
@@ -44,6 +46,7 @@ async def test_assistant_appointment_handoff():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_feedback_handoff():
     """Test that Anna correctly hands off to suggestion agent when user wants to provide feedback."""
@@ -51,7 +54,7 @@ async def test_assistant_feedback_handoff():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I want to complain about my recent service")
         
@@ -66,6 +69,7 @@ async def test_assistant_feedback_handoff():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_business_handoff():
     """Test that Anna correctly hands off to business development agent for business inquiries."""
@@ -73,7 +77,7 @@ async def test_assistant_business_handoff():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I'm from another company and want to sell you services")
         
@@ -88,6 +92,7 @@ async def test_assistant_business_handoff():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_booking_flow():
     """Test that Naya (appointment agent) can handle a complete booking flow."""
@@ -95,7 +100,7 @@ async def test_appointment_agent_booking_flow():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         # First, user asks about scheduling
         result1 = await session.run(user_input="I need to schedule a plumbing repair")
@@ -115,6 +120,7 @@ async def test_appointment_agent_booking_flow():
         result2.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_checks_availability():
     """Test that Naya can check technician availability."""
@@ -122,7 +128,7 @@ async def test_appointment_agent_checks_availability():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="What times are available for appointments?")
         
@@ -137,6 +143,7 @@ async def test_appointment_agent_checks_availability():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_feedback_collection():
     """Test that Helen (suggestion agent) can collect customer feedback."""
@@ -144,7 +151,7 @@ async def test_suggestion_agent_feedback_collection():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="I want to provide feedback about my recent service")
         
@@ -154,6 +161,7 @@ async def test_suggestion_agent_feedback_collection():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_service_inquiry():
     """Test that Marcus (business development agent) handles service inquiries."""
@@ -161,7 +169,7 @@ async def test_business_development_agent_service_inquiry():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="I want to sell marketing services to your plumbing company")
         
@@ -171,6 +179,7 @@ async def test_business_development_agent_service_inquiry():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_irrelevant_request():
     """Test that Marcus properly rejects irrelevant business requests."""
@@ -178,7 +187,7 @@ async def test_business_development_agent_irrelevant_request():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="I want to sell you pet grooming services")
         
@@ -188,6 +197,7 @@ async def test_business_development_agent_irrelevant_request():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_books_appointment():
     """Test that Naya can book an appointment with proper details."""
@@ -195,7 +205,7 @@ async def test_appointment_agent_books_appointment():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         # Simulate a complete booking conversation
         result = await session.run(user_input="Book me for tomorrow at 2pm with John Smith")
@@ -211,6 +221,7 @@ async def test_appointment_agent_books_appointment():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_stores_feedback():
     """Test that Helen stores customer feedback properly."""
@@ -218,7 +229,7 @@ async def test_suggestion_agent_stores_feedback():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="The technician was late and didn't fix the problem properly")
         
@@ -233,6 +244,7 @@ async def test_suggestion_agent_stores_feedback():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_stores_request():
     """Test that Marcus stores business development requests."""
@@ -240,7 +252,7 @@ async def test_business_development_agent_stores_request():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="I want to sell you accounting software for $500/month")
         
@@ -255,6 +267,7 @@ async def test_business_development_agent_stores_request():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_cancels_appointment():
     """Test that Naya can cancel appointments."""
@@ -262,7 +275,7 @@ async def test_appointment_agent_cancels_appointment():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="Cancel my appointment with tracking ID 123456")
         
@@ -277,6 +290,7 @@ async def test_appointment_agent_cancels_appointment():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_finds_existing_appointments():
     """Test that Naya can find existing appointments for a customer."""
@@ -284,7 +298,7 @@ async def test_appointment_agent_finds_existing_appointments():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="What are my existing appointments?")
         
@@ -299,6 +313,7 @@ async def test_appointment_agent_finds_existing_appointments():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_finds_past_appointments():
     """Test that Helen can find past appointments for feedback context."""
@@ -306,7 +321,7 @@ async def test_suggestion_agent_finds_past_appointments():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="I want to give feedback about my appointment last week")
         
@@ -321,6 +336,7 @@ async def test_suggestion_agent_finds_past_appointments():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_multiple_turns_conversation():
     """Test a multi-turn conversation with context retention."""
@@ -328,7 +344,7 @@ async def test_multiple_turns_conversation():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         # First turn - user greets
         result1 = await session.run(user_input="Hello")
@@ -351,6 +367,7 @@ async def test_multiple_turns_conversation():
         result2.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_emergency_mention():
     """Test that Anna properly handles emergency situations."""
@@ -358,7 +375,7 @@ async def test_agent_handles_emergency_mention():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I have a burst pipe and water is flooding my basement!")
         
@@ -368,6 +385,7 @@ async def test_agent_handles_emergency_mention():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_general_questions():
     """Test that Anna can answer general questions about plumbing services."""
@@ -375,7 +393,7 @@ async def test_agent_handles_general_questions():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="What services do you offer?")
         

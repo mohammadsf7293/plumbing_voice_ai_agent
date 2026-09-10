@@ -1,0 +1,1 @@
+"""Voice receptionist application components."""

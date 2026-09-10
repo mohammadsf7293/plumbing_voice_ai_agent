@@ -5,6 +5,7 @@ from livekit.plugins import openai
 from agent import Assistant, AppointmentAgent, SuggestionAgent, BusinessDevelopmentAgent, UserData
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_greeting():
     """Test that Anna provides a friendly greeting."""
@@ -16,7 +17,7 @@ async def test_assistant_greeting():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="Hello")
         
@@ -26,6 +27,7 @@ async def test_assistant_greeting():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_greeting():
     """Test that Naya provides appropriate greeting."""
@@ -37,7 +39,7 @@ async def test_appointment_agent_greeting():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="Hello")
         
@@ -47,6 +49,7 @@ async def test_appointment_agent_greeting():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_greeting():
     """Test that Helen provides appropriate greeting."""
@@ -58,7 +61,7 @@ async def test_suggestion_agent_greeting():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="Hello")
         
@@ -68,6 +71,7 @@ async def test_suggestion_agent_greeting():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_greeting():
     """Test that Marcus provides appropriate greeting."""
@@ -79,7 +83,7 @@ async def test_business_development_agent_greeting():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="Hello")
         
@@ -89,6 +93,7 @@ async def test_business_development_agent_greeting():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_responds_to_appointment_request():
     """Test that Anna responds appropriately to appointment requests."""
@@ -100,7 +105,7 @@ async def test_assistant_responds_to_appointment_request():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I need to schedule a plumbing appointment")
         
@@ -110,6 +115,7 @@ async def test_assistant_responds_to_appointment_request():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_responds_to_feedback_request():
     """Test that Anna responds appropriately to feedback requests."""
@@ -121,7 +127,7 @@ async def test_assistant_responds_to_feedback_request():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I want to complain about my service")
         
@@ -150,6 +156,7 @@ async def test_assistant_responds_to_feedback_request():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_responds_to_business_inquiry():
     """Test that Anna responds appropriately to business inquiries."""
@@ -161,7 +168,7 @@ async def test_assistant_responds_to_business_inquiry():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I want to sell you services")
         
@@ -190,6 +197,7 @@ async def test_assistant_responds_to_business_inquiry():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_responds_to_booking_request():
     """Test that Naya responds appropriately to booking requests."""
@@ -201,7 +209,7 @@ async def test_appointment_agent_responds_to_booking_request():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="I need to book an appointment for tomorrow")
         
@@ -211,6 +219,7 @@ async def test_appointment_agent_responds_to_booking_request():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_responds_to_feedback():
     """Test that Helen responds appropriately to feedback."""
@@ -222,7 +231,7 @@ async def test_suggestion_agent_responds_to_feedback():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="I had a bad experience with your service")
         
@@ -232,6 +241,7 @@ async def test_suggestion_agent_responds_to_feedback():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_responds_to_service_inquiry():
     """Test that Marcus responds appropriately to service inquiries."""
@@ -243,7 +253,7 @@ async def test_business_development_agent_responds_to_service_inquiry():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="I want to sell you marketing services")
         
@@ -253,6 +263,7 @@ async def test_business_development_agent_responds_to_service_inquiry():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_multiple_turns_conversation():
     """Test a multi-turn conversation with context retention."""
@@ -264,7 +275,7 @@ async def test_multiple_turns_conversation():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         # First turn - user greets
         result1 = await session.run(user_input="Hello")
@@ -282,6 +293,7 @@ async def test_multiple_turns_conversation():
         result2.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_emergency_mention():
     """Test that Anna properly handles emergency situations."""
@@ -293,7 +305,7 @@ async def test_agent_handles_emergency_mention():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I have a burst pipe and water is flooding my basement!")
         
@@ -322,6 +334,7 @@ async def test_agent_handles_emergency_mention():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_general_questions():
     """Test that Anna can answer general questions about plumbing services."""
@@ -333,7 +346,7 @@ async def test_agent_handles_general_questions():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="What services do you offer?")
         
@@ -343,6 +356,7 @@ async def test_agent_handles_general_questions():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_unclear_requests():
     """Test that Anna handles unclear or ambiguous requests."""
@@ -354,7 +368,7 @@ async def test_agent_handles_unclear_requests():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I need help with something")
         
@@ -364,6 +378,7 @@ async def test_agent_handles_unclear_requests():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_off_topic_requests():
     """Test that Anna handles off-topic requests appropriately."""
@@ -375,7 +390,7 @@ async def test_agent_handles_off_topic_requests():
         userdata = UserData()
         session.userdata = userdata
         
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="What's the weather like today?")
         

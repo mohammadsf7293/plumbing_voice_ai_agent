@@ -4,7 +4,7 @@ A voice receptionist for a fictional plumbing company, built with LiveKit Agents
 
 The product problem is simple: a caller should be able to explain what they need, reach the right workflow, and hear a clear next step without repeating their story. This project explores that experience through specialist agents, explicit tool calls, and conversational evaluations.
 
-**Status:** A Python prototype with a real voice pipeline and simulated business operations. Booking and cancellation produce confirmations without persisting changes; availability is hardcoded and appointment history is randomly generated. The repository includes the agent worker, tests, and container configuration. A web client, telephone integration, and operator dashboard are outside the current implementation.
+**Status:** A Python prototype with a real voice pipeline and simulated business operations. Booking, cancellation, feedback, and inquiries use an in-memory store isolated to each call. Availability uses the next three days; booking history reflects that call’s actual operations. Nothing persists after the session ends. The repository includes the agent worker, tests, and container configuration. A web client, telephone integration, and operator dashboard are outside the current implementation.
 
 ## Caller experience
 
@@ -35,7 +35,7 @@ flowchart TD
     TTS --> Reply[Spoken response]
 ```
 
-The implementation lives in [agent.py](agent.py). Python 3.11+ and LiveKit Agents connect the speech, model, and business workflow layers in a single worker.
+The worker starts in [agent.py](agent.py); prompts, tools, state, speech processing, and telemetry live in [plumbing/](plumbing/). Python 3.11+ and LiveKit Agents connect the speech, model, and business workflow layers in a single worker.
 
 ### Carry the issue through the handoff
 
@@ -47,108 +47,98 @@ All four agents are instantiated at session startup, so the normal handoff path 
 
 Each specialist has its own instructions, voice, and tool set. Naya gets appointment tools; Helen gets feedback and past-appointment tools; Marcus gets an inquiry submission tool. This makes the available actions easy to inspect and gives each conversation a narrower scope.
 
-Business operations are exposed through `function_tool` handlers, providing clear integration points for a future backend. Address, ZIP code, and phone checks currently live in Naya’s prompt. Enforcing those rules in code before accepting a booking is still required.
+Business operations are exposed through `function_tool` handlers, providing clear integration points for a future backend. The booking tool validates required fields, US address format, ZIP code, and phone format before reserving a slot. These are format checks, not address deliverability or phone ownership verification. Repeated bookings return the same tracking ID, and conflicting reservations are rejected within the session.
 
 ### Design for spoken interaction
 
 Prompts favor short responses, acknowledgment, and clarification before action. The session combines Silero voice activity detection with LiveKit’s multilingual turn detector and configures BVC Telephony noise cancellation. Transcription is explicitly configured for English; the turn detector’s name does not imply multilingual product support.
 
-`clean_text` and the `CleanTTS.say` override attempt to remove Markdown characters before speech. Unit tests cover the string transformation, but they do not verify that the streaming synthesis path uses the override. Audio-level verification belongs in the next iteration, including checking that cleanup preserves meaningful punctuation.
+`VoiceAgent.tts_node` cleans streamed text before handing it to LiveKit’s default synthesis node, preserving phone-number hyphens and other meaningful punctuation. Offline tests exercise the installed SDK’s actual default node with a fake speech transport and split input at every character boundary. Pronunciation and perceived audio quality still require live provider testing. See [LiveKit’s pipeline hook documentation](https://docs.livekit.io/agents/logic/nodes/).
 
-## Run locally
+## Try it without subscriptions
 
-You need Python 3.11+, `uv`, and credentials for LiveKit, OpenAI, Deepgram, and Cartesia. Run these commands from the repository root:
+Python 3.11+ and `uv` are sufficient for the offline workflow. Initial setup downloads public dependencies; tests and the scripted demo require no API keys or model downloads.
 
 ```bash
 make setup-dev
-make env-setup
+make demo
+make test
 ```
 
-`make env-setup` creates `.env.local` from [.env.sample](.env.sample) only if it does not already exist. Fill in these values:
+`make demo` runs the actual booking logic: reject an invalid phone number, reserve a slot, retry without creating a duplicate, look up the appointment, and cancel it. This is a scripted business workflow, not a simulated claim of a working AI conversation.
 
-```dotenv
-LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=your-livekit-api-key
-LIVEKIT_API_SECRET=your-livekit-api-secret
-OPENAI_API_KEY=your-openai-api-key
-DEEPGRAM_API_KEY=your-deepgram-api-key
-CARTESIA_API_KEY=your-cartesia-api-key
-```
+Offline tests replace provider boundaries with fakes and block Python socket connections. They exercise booking validation, state changes, handoff greetings, streaming speech cleanup, session wiring, and structured event handling. Provider-backed conversation evaluations are explicitly skipped by default.
 
-The template also includes `NEXT_PUBLIC_LIVEKIT_URL`; the Python worker does not use it. `.env.local` is ignored by Git.
+## Run the voice worker
 
-Download the required model assets, then start a local session:
+For real speech, configure LiveKit, OpenAI, Deepgram, and Cartesia credentials:
 
 ```bash
+make env-setup
+# Edit .env.local with your credentials.
 make download
 make run-console
 ```
 
-Console mode is the local voice entry point; use a microphone and speakers or headphones to exercise the speech pipeline.
+The [.env.sample](.env.sample) template contains the required variables. `NEXT_PUBLIC_LIVEKIT_URL` is unused by the Python worker. Missing runtime configuration is reported by variable name without printing credential values.
 
 | Command | Purpose |
 | --- | --- |
-| `make run-console` | Run `uv run agent.py console` for local interaction |
-| `make run-dev` | Run `uv run agent.py dev` for development against LiveKit |
-| `make run-prod` | Run `uv run agent.py start` to start a worker that waits for jobs |
+| `make run-console` | Local voice interaction using a microphone and speakers or headphones |
+| `make run-dev` | Development worker connected to LiveKit |
+| `make run-prod` | Start a worker in the current environment; this does not deploy it |
 
-Room-based development requires a separate client connected to the same LiveKit project. `make run-prod` starts the worker in the current environment; it does not deploy the application to LiveKit Cloud.
-
-### Try these scenarios
-
-- **Booking:** “My kitchen sink is leaking. Can I schedule a plumber?” Listen for Naya to acknowledge the issue after the transfer.
-- **Feedback:** “I want to leave feedback about my last visit.” Follow Helen’s collection and summary flow.
-- **Business inquiry:** “I supply plumbing equipment and would like to discuss a partnership.” Follow Marcus’s inquiry flow.
-- **Correction:** Give an incomplete phone number during scheduling, then correct it. Inspect how the agent asks for clarification.
-
-Use fictional customer details: the mock tools print submitted information to the console. Availability uses fixed September 2025 dates, and generated appointment history may contain invalid dates. These fixtures need updating for a realistic scheduling demo.
+Room-based development requires a separate client connected to the same LiveKit project. Try “My kitchen sink is leaking. Can I schedule a plumber?” and listen for Naya to acknowledge the issue after Anna’s handoff. Booking uses future demo slots and explicitly confirms that no technician will be dispatched.
 
 ## Testing and debugging
 
-The suite combines direct Python assertions with LiveKit conversation tests that use an LLM to judge response intent. This covers different questions: whether tools and handoff state are wired correctly, and whether the response fits the caller’s request.
+| Command | Coverage |
+| --- | --- |
+| `make test` | All offline tests; provider evaluations explicitly skipped |
+| `make test-basic` | Initialization, tools, and text cleanup |
+| `make test-handoffs` | Direct handoff state and greeting checks; live evaluations skipped |
+| `make test-edge-cases` | Booking validation, streamed text, configuration, and telemetry |
+| `make test-coverage` | Offline coverage with missing lines reported |
+| `make test-verbose` | Detailed offline output |
+| `make test-provider` | Opt-in provider-backed evaluations; requires credentials and may incur charges |
 
-After installing development dependencies and configuring credentials:
+The legacy conversation evaluations use an LLM to judge response intent. They remain unverified against live providers; a green offline run does not establish conversational quality or provider compatibility. Actual audio, interruption handling, outages, and telephone integration require separate end-to-end testing. See [TESTING.md](TESTING.md) for the boundary between offline checks and live evaluations.
 
-```bash
-make test-basic       # Initialization, tool registration, and text cleanup
-make test-behavior    # Conversation evaluations in tests/test_final.py
-make test-handoffs    # Selected handoff tests
-make test-edge-cases  # Selected edge-case tests
-make test            # Full suite
-make test-coverage   # Full suite with coverage output
-```
-
-The handoff and edge-case Make targets run explicit subsets, not their entire files. The Makefile notes possible failures in more complex cases; a passing subset should not be treated as a passing full suite. Conversation evaluations call OpenAI and may incur usage charges; provider configuration is also needed when tests instantiate speech components. These evaluations are not a substitute for testing actual audio, interruptions, or provider outages.
-
-For detailed evaluation output:
-
-```bash
-make test-verbose
-```
-
-Start debugging with the tool outputs and transfer messages in the console. The worker currently uses `print` statements; structured tracing and latency dashboards are not implemented.
+Operational events use the `plumbing.events` logger. JSON records correlate handoffs, agent state, tool outcomes, provider errors, and SDK timing metrics with a session ID. Customer transcripts, tool arguments, and tool outputs are omitted. LLM time to first token and TTS time to first byte are provider metrics, not a measurement of end-to-end perceived latency.
 
 ## Container and deployment configuration
 
-The [Dockerfile](Dockerfile) uses a single Python 3.11 slim Bookworm stage, installs dependencies with `pip`, switches to a non-root user, downloads model assets, and starts the worker with `python agent.py start`.
+The [Dockerfile](Dockerfile) uses Python 3.11 slim Bookworm, installs dependencies from `uv.lock` with `uv sync --locked`, and runs as a non-root user. Model assets are downloaded during the build, so the build requires internet access but no paid provider calls.
 
-[livekit.toml](livekit.toml) contains an existing LiveKit Cloud project subdomain, agent ID, and `us-east` region configuration. Configure your own deployment target before using it. Local setup uses `uv`; the Docker build currently installs from `pyproject.toml` without consuming `uv.lock`, so local and container dependency resolution are not yet aligned.
+```bash
+docker build -t plumbing-voice-agent .
+docker run --rm plumbing-voice-agent python -m plumbing.demo
+# For the real worker, after configuring credentials:
+docker run --rm --env-file .env.local plumbing-voice-agent
+```
+
+[livekit.toml](livekit.toml) contains an existing Cloud project subdomain, agent ID, and `us-east` region. Configure your own deployment target before using it. The locked SDK baseline is retained; this change does not claim an upgrade or a dependency vulnerability audit.
 
 ## Next steps toward a production product
 
-1. **Make bookings trustworthy.** Replace mock operations with persistent storage, validate inputs in code, and add idempotency and transactional slot reservation. A spoken confirmation should correspond to a committed booking.
+1. **Persist bookings across calls.** Replace the session-local store with a shared database, transactional reservations, and durable idempotency. The current store prevents conflicts only within one call.
 2. **Make failures recoverable.** Add provider timeouts, explicit failure responses, and a human escalation path. Define how urgent requests leave the automated workflow.
-3. **Make conversations inspectable.** Build an operator view that connects transcripts, tool inputs and results, handoffs, and errors. Capture time to first audio and provider latency so a slow or failed turn can be investigated.
-4. **Measure the caller experience.** Use repeatable audio scenarios to evaluate interruptions, handoff continuity, and speech output. Track booking completion, repeated-information requests, and time to a confirmed next step, then iterate from observed failures.
-5. **Tighten the developer loop.** Separate deterministic tests from provider-backed evaluations, establish a passing CI baseline, and align container builds with the lockfile.
+3. **Make conversations inspectable.** Add an operator view for transcripts, tool outcomes, handoffs, and timings, building on the structured events.
+4. **Measure the caller experience.** Run repeatable audio scenarios to evaluate interruptions, handoff continuity, and speech output; track completion and repeated-information requests.
+5. **Verify live integrations.** Establish a provider-backed evaluation baseline before upgrading the SDK or promising deployment readiness.
 
 ## Repository guide
 
 | Path | Contents |
 | --- | --- |
-| [agent.py](agent.py) | Agent instructions, session setup, handoffs, and mock business tools |
-| [tests/](tests/) | Unit, conversation, handoff, edge-case, and entrypoint tests |
-| [Makefile](Makefile) | Setup, run, and test commands |
-| [pyproject.toml](pyproject.toml) / [uv.lock](uv.lock) | Dependency declarations and local lockfile |
-| [.env.sample](.env.sample) | Credential template |
-| [Dockerfile](Dockerfile) / [livekit.toml](livekit.toml) | Container build and Cloud deployment configuration |
+| [agent.py](agent.py) | Worker configuration and session startup |
+| [plumbing/agents.py](plumbing/agents.py) | Specialist prompts and handoffs |
+| [plumbing/business.py](plumbing/business.py) / [plumbing/tools.py](plumbing/tools.py) | Validated demo store and LiveKit tool adapters |
+| [plumbing/speech.py](plumbing/speech.py) | Streaming TTS text processing |
+| [plumbing/state.py](plumbing/state.py) / [plumbing/config.py](plumbing/config.py) | Session state and environment validation |
+| [plumbing/telemetry.py](plumbing/telemetry.py) | Structured operational events |
+| [plumbing/demo.py](plumbing/demo.py) | Credential-free scripted booking workflow |
+| [tests/](tests/) | Offline checks and opt-in provider evaluations |
+| [Makefile](Makefile) | Setup, demo, run, and test commands |
+| [pyproject.toml](pyproject.toml) / [uv.lock](uv.lock) | Dependency declarations and locked resolution |
+| [Dockerfile](Dockerfile) / [livekit.toml](livekit.toml) | Container and deployment configuration |

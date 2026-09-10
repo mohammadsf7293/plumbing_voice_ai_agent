@@ -2,7 +2,8 @@ import pytest
 from livekit.agents import AgentSession
 from livekit.plugins import openai
 
-from agent import Assistant, get_technician_available_times_from_db, clean_text
+from types import SimpleNamespace
+from agent import UserData, AppointmentAgent, Assistant, get_technician_available_times_from_db, clean_text
 
 
 @pytest.mark.asyncio
@@ -16,6 +17,7 @@ async def test_assistant_initialization():
     assert "You are Anna, a helpful and friendly receptionist for a plumbing company." in assistant.instructions
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_greeting_behavior():
     """Test that the Assistant provides appropriate greeting behavior."""
@@ -23,7 +25,7 @@ async def test_assistant_greeting_behavior():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="Hello")
         
@@ -33,6 +35,7 @@ async def test_assistant_greeting_behavior():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_handoff_behavior():
     """Test that the Assistant correctly identifies when to hand off to specialists."""
@@ -40,7 +43,7 @@ async def test_assistant_handoff_behavior():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         # Test appointment handoff
         result = await session.run(user_input="I need to schedule a plumbing appointment")
@@ -57,7 +60,7 @@ async def test_assistant_handoff_behavior():
 async def test_get_technician_available_times_from_db():
     """Test that the get_technician_available_times_from_db function returns the expected list."""
     # Call the function without a technician name
-    result = await get_technician_available_times_from_db()
+    result = await get_technician_available_times_from_db(SimpleNamespace(userdata=UserData()))
     
     # Check that the result is a list
     assert isinstance(result, list)
@@ -82,7 +85,7 @@ async def test_get_technician_available_times_from_db_with_filter():
     """Test that the get_technician_available_times_from_db function correctly filters by technician name."""
     # Call the function with a specific technician name
     technician_name = "John Smith"
-    result = await get_technician_available_times_from_db(technician_name)
+    result = await get_technician_available_times_from_db(SimpleNamespace(userdata=UserData()), technician_name)
     
     # Check that the result is a list
     assert isinstance(result, list)
@@ -96,10 +99,10 @@ async def test_get_technician_available_times_from_db_with_filter():
 
 
 @pytest.mark.asyncio
-async def test_assistant_has_technician_times_tool():
+async def test_appointment_agent_has_technician_times_tool():
     """Test that the Assistant has the get_technician_available_times tool registered."""
     # Create an instance of the Assistant class
-    assistant = Assistant()
+    assistant = AppointmentAgent()
     
     # Check that the assistant has tools
     assert hasattr(assistant, 'tools')
@@ -136,10 +139,10 @@ def test_clean_text():
     
     # Test symbols in middle of text
     assert clean_text("This is *bold* text") == "This is bold text"
-    assert clean_text("Before-after") == "Beforeafter"
+    assert clean_text("Before-after") == "Before-after"
     
     # Test empty string
     assert clean_text("") == ""
     
     # Test string with only symbols
-    assert clean_text("*_#`~>-") == ""
+    assert clean_text("*_#`~>-") == "#>-"

@@ -5,6 +5,7 @@ from livekit.plugins import openai
 from agent import Assistant, AppointmentAgent, SuggestionAgent, BusinessDevelopmentAgent
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_booking_error():
     """Test that Naya handles booking errors gracefully."""
@@ -17,7 +18,7 @@ async def test_appointment_agent_handles_booking_error():
             AppointmentAgent,
             {"book_appointment_in_db": lambda: RuntimeError("Database connection failed")},
         ):
-            await session.start(AppointmentAgent())
+            await session.start(agent=AppointmentAgent())
             
             result = await session.run(user_input="Book me an appointment for tomorrow")
             
@@ -32,6 +33,7 @@ async def test_appointment_agent_handles_booking_error():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_no_availability():
     """Test that Naya handles no available time slots."""
@@ -44,7 +46,7 @@ async def test_appointment_agent_handles_no_availability():
             AppointmentAgent,
             {"get_technician_available_times": lambda: []},
         ):
-            await session.start(AppointmentAgent())
+            await session.start(agent=AppointmentAgent())
             
             result = await session.run(user_input="What times are available?")
             
@@ -59,6 +61,7 @@ async def test_appointment_agent_handles_no_availability():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_handles_storage_error():
     """Test that Helen handles feedback storage errors gracefully."""
@@ -71,7 +74,7 @@ async def test_suggestion_agent_handles_storage_error():
             SuggestionAgent,
             {"store_customer_suggestions": lambda: RuntimeError("Storage service unavailable")},
         ):
-            await session.start(SuggestionAgent())
+            await session.start(agent=SuggestionAgent())
             
             result = await session.run(user_input="I want to complain about poor service")
             
@@ -86,6 +89,7 @@ async def test_suggestion_agent_handles_storage_error():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_handles_storage_error():
     """Test that Marcus handles business request storage errors gracefully."""
@@ -98,7 +102,7 @@ async def test_business_development_agent_handles_storage_error():
             BusinessDevelopmentAgent,
             {"store_miscellaneous_requests_in_db": lambda: RuntimeError("Database error")},
         ):
-            await session.start(BusinessDevelopmentAgent())
+            await session.start(agent=BusinessDevelopmentAgent())
             
             result = await session.run(user_input="I want to sell you marketing services")
             
@@ -113,6 +117,7 @@ async def test_business_development_agent_handles_storage_error():
             result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_invalid_tracking_id():
     """Test that Naya handles invalid tracking IDs for cancellation."""
@@ -120,7 +125,7 @@ async def test_appointment_agent_handles_invalid_tracking_id():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="Cancel my appointment with tracking ID abc123")
         
@@ -135,6 +140,7 @@ async def test_appointment_agent_handles_invalid_tracking_id():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_handles_unclear_requests():
     """Test that Anna handles unclear or ambiguous requests."""
@@ -142,7 +148,7 @@ async def test_assistant_handles_unclear_requests():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="I need help with something")
         
@@ -152,6 +158,7 @@ async def test_assistant_handles_unclear_requests():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_assistant_handles_off_topic_requests():
     """Test that Anna handles off-topic requests appropriately."""
@@ -159,7 +166,7 @@ async def test_assistant_handles_off_topic_requests():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         result = await session.run(user_input="What's the weather like today?")
         
@@ -169,6 +176,7 @@ async def test_assistant_handles_off_topic_requests():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_missing_information():
     """Test that Naya asks for missing required information."""
@@ -176,7 +184,7 @@ async def test_appointment_agent_handles_missing_information():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="I need an appointment")
         
@@ -186,6 +194,7 @@ async def test_appointment_agent_handles_missing_information():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_handles_empty_feedback():
     """Test that Helen handles empty or vague feedback."""
@@ -193,7 +202,7 @@ async def test_suggestion_agent_handles_empty_feedback():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         
         result = await session.run(user_input="I have feedback")
         
@@ -203,6 +212,7 @@ async def test_suggestion_agent_handles_empty_feedback():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_handles_incomplete_information():
     """Test that Marcus asks for complete business information."""
@@ -210,7 +220,7 @@ async def test_business_development_agent_handles_incomplete_information():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         
         result = await session.run(user_input="I want to sell you something")
         
@@ -220,6 +230,7 @@ async def test_business_development_agent_handles_incomplete_information():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_invalid_address():
     """Test that Naya validates US addresses."""
@@ -227,7 +238,7 @@ async def test_appointment_agent_handles_invalid_address():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="My address is 123 Main St, London, UK")
         
@@ -237,6 +248,7 @@ async def test_appointment_agent_handles_invalid_address():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_invalid_phone():
     """Test that Naya validates US phone number format."""
@@ -244,7 +256,7 @@ async def test_appointment_agent_handles_invalid_phone():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="My phone number is 123-456")
         
@@ -254,6 +266,7 @@ async def test_appointment_agent_handles_invalid_phone():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handles_invalid_zip():
     """Test that Naya validates US zip code format."""
@@ -261,7 +274,7 @@ async def test_appointment_agent_handles_invalid_zip():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="My zip code is ABC123")
         
@@ -271,6 +284,7 @@ async def test_appointment_agent_handles_invalid_zip():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handles_rapid_fire_requests():
     """Test that agents handle multiple rapid requests appropriately."""
@@ -278,7 +292,7 @@ async def test_agent_handles_rapid_fire_requests():
         openai.LLM(model="gpt-4o-mini") as llm,
         AgentSession(llm=llm) as session,
     ):
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         # First request
         result1 = await session.run(user_input="Hello")

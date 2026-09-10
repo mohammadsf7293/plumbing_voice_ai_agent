@@ -14,6 +14,7 @@ from agent import (
 )
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_appointment_agent_handoff_with_context():
     """Test that appointment agent receives context from the main assistant."""
@@ -26,7 +27,7 @@ async def test_appointment_agent_handoff_with_context():
         userdata.problem_description = "leaky faucet"
         
         # Start with appointment agent directly
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         session.userdata = userdata
         
         result = await session.run(user_input="Hello")
@@ -37,6 +38,7 @@ async def test_appointment_agent_handoff_with_context():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_suggestion_agent_handoff_with_context():
     """Test that suggestion agent receives context from the main assistant."""
@@ -49,7 +51,7 @@ async def test_suggestion_agent_handoff_with_context():
         userdata.problem_description = "poor service quality"
         
         # Start with suggestion agent directly
-        await session.start(SuggestionAgent())
+        await session.start(agent=SuggestionAgent())
         session.userdata = userdata
         
         result = await session.run(user_input="Hello")
@@ -60,6 +62,7 @@ async def test_suggestion_agent_handoff_with_context():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_business_development_agent_handoff_with_context():
     """Test that business development agent receives context from the main assistant."""
@@ -72,7 +75,7 @@ async def test_business_development_agent_handoff_with_context():
         userdata.problem_description = "marketing services inquiry"
         
         # Start with business development agent directly
-        await session.start(BusinessDevelopmentAgent())
+        await session.start(agent=BusinessDevelopmentAgent())
         session.userdata = userdata
         
         result = await session.run(user_input="Hello")
@@ -197,6 +200,7 @@ async def test_multiple_agent_handoffs():
     assert suggestion_agent is not business_agent
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handoff_without_problem_description():
     """Test that agents work correctly when no problem description is provided."""
@@ -205,7 +209,7 @@ async def test_agent_handoff_without_problem_description():
         AgentSession(llm=llm) as session,
     ):
         # Start with appointment agent without context
-        await session.start(AppointmentAgent())
+        await session.start(agent=AppointmentAgent())
         
         result = await session.run(user_input="Hello")
         
@@ -215,6 +219,7 @@ async def test_agent_handoff_without_problem_description():
         result.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handoff_sequence():
     """Test a sequence of handoffs between different agents."""
@@ -223,7 +228,7 @@ async def test_agent_handoff_sequence():
         AgentSession(llm=llm) as session,
     ):
         # Start with main assistant
-        await session.start(Assistant())
+        await session.start(agent=Assistant())
         
         # First handoff to appointment agent
         result1 = await session.run(user_input="I need to schedule an appointment")
@@ -253,6 +258,7 @@ async def test_agent_handoff_sequence():
         result3.expect.no_more_events()
 
 
+@pytest.mark.provider
 @pytest.mark.asyncio
 async def test_agent_handoff_with_mocked_tools():
     """Test agent handoffs work correctly with mocked tools."""
@@ -269,7 +275,7 @@ async def test_agent_handoff_with_mocked_tools():
                 "transfer_to_business_development_agent": lambda: BusinessDevelopmentAgent(),
             },
         ):
-            await session.start(Assistant())
+            await session.start(agent=Assistant())
             
             # Test appointment handoff
             result1 = await session.run(user_input="I need an appointment")

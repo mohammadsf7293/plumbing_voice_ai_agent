@@ -1,70 +1,17 @@
-# This is an example Dockerfile that builds a minimal container for running LK Agents
-# For more information on the build process, see https://docs.livekit.io/agents/ops/deployment/builds/
-# syntax=docker/dockerfile:1
-
-# Use the official UV Python base image with Python 3.11 on Debian Bookworm
-# UV is a fast Python package manager that provides better performance than pip
-# We use the slim variant to keep the image size smaller while still having essential tools
-# Specify platform to ensure compatibility with deployment environment
-ARG PYTHON_VERSION=3.11
-FROM --platform=linux/amd64 python:${PYTHON_VERSION}-slim-bookworm AS base
-
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
-ENV PYTHONUNBUFFERED=1
-
-# Create a non-privileged user that the app will run under.
-# See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
-ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/app" \
-    --shell "/sbin/nologin" \
-    --uid "${UID}" \
-    appuser
-
-# Install build dependencies required for Python packages with native extensions
-# gcc: C compiler needed for building Python packages with C extensions
-# g++: C++ compiler needed for building Python packages with C++ extensions
-# python3-dev: Python development headers needed for compilation
-# We clean up the apt cache after installation to keep the image size down
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    python3-dev \
-    pip \
-  && rm -rf /var/lib/apt/lists/*
-
-# Create a new directory for our application code
-# And set it as the working directory
+# Match local dependency resolution; model assets are downloaded at build time.
+FROM ghcr.io/astral-sh/uv:0.8.15 AS uv
+FROM python:3.11-slim-bookworm
+ENV PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
-
-# Copy just the dependency files first, for more efficient layer caching
-COPY pyproject.toml ./
-
-# Install Python dependencies using pip
-# This installs all dependencies from pyproject.toml
-RUN pip install --no-cache-dir -e .
-
-# Copy all remaining pplication files into the container
-# This includes source code, configuration files, and dependency specifications
-# (Excludes files specified in .dockerignore)
-COPY . .
-
-# Change ownership of all app files to the non-privileged user
-# This ensures the application can read/write files as needed
+COPY --from=uv /uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev
+RUN useradd --create-home --home-dir /home/appuser --uid 10001 appuser
+COPY agent.py ./
+COPY plumbing ./plumbing
 RUN chown -R appuser:appuser /app
-
-# Switch to the non-privileged user for all subsequent operations
-# This improves security by not running as root
 USER appuser
-
-# Pre-download any ML models or files the agent needs
-# This ensures the container is ready to run immediately without downloading
-# dependencies at runtime, which improves startup time and reliability
 RUN python agent.py download-files
-
-# Run the application using Python
-# The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
 CMD ["python", "agent.py", "start"]

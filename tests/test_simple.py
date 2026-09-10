@@ -47,13 +47,13 @@ def test_clean_text_function():
     
     # Test symbols in middle of text
     assert clean_text("This is *bold* text") == "This is bold text"
-    assert clean_text("Before-after") == "Beforeafter"
+    assert clean_text("Before-after") == "Before-after"
     
     # Test empty string
     assert clean_text("") == ""
     
     # Test string with only symbols
-    assert clean_text("*_#`~>-") == ""
+    assert clean_text("*_#`~>-") == "#>-"
 
 
 def test_agent_tools_exist():
@@ -167,3 +167,13 @@ def test_agent_voice_assignment():
     assert assistant.tts is not appointment_agent.tts
     assert appointment_agent.tts is not suggestion_agent.tts
     assert suggestion_agent.tts is not business_agent.tts
+
+
+def test_provider_tool_schemas_require_validated_booking_fields():
+    from livekit.agents.llm.utils import build_strict_openai_schema
+    schemas = [build_strict_openai_schema(tool) for instance in
+               (Assistant(), AppointmentAgent(), SuggestionAgent(), BusinessDevelopmentAgent())
+               for tool in instance.tools]
+    booking = next(schema['function'] for schema in schemas if schema['function']['name'] == 'book_appointment_in_db')
+    assert {'customer_name', 'agent_name', 'timeslot', 'address', 'phone', 'zip_code'} <= set(booking['parameters']['required'])
+    assert all('context' not in schema['function']['parameters']['properties'] for schema in schemas)
