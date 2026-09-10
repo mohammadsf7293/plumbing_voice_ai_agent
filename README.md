@@ -1,391 +1,154 @@
 # Plumbing Voice AI Agent
 
-A sophisticated multi-agent voice AI system built with LiveKit for a fictitious plumbing company. This system provides intelligent call routing, appointment scheduling, customer feedback handling, and business development inquiries through natural voice conversations.
+A voice receptionist for a fictional plumbing company, built with LiveKit Agents. It routes callers to appointment, customer feedback, and business inquiry specialists, carrying a summary of the caller’s request into the handoff.
 
-## Engineering Notes
+The product problem is simple: a caller should be able to explain what they need, reach the right workflow, and hear a clear next step without repeating their story. This project explores that experience through specialist agents, explicit tool calls, and conversational evaluations.
 
-A few problems worth calling out, since they're the parts that took real work rather than configuration.
+**Status:** A Python prototype with a real voice pipeline and simulated business operations. Booking and cancellation produce confirmations without persisting changes; availability is hardcoded and appointment history is randomly generated. The repository includes the agent worker, tests, and container configuration. A web client, telephone integration, and operator dashboard are outside the current implementation.
 
-### Handoffs that don't lose the conversation
+## Caller experience
 
-Routing a caller to a specialist is easy. Routing them *without making them repeat themselves* is the actual problem.
+| Caller intent | Agent | Workflow |
+| --- | --- | --- |
+| General questions or an unclear request | **Anna**, receptionist | Clarify the request and route to a specialist |
+| Schedule, change, or cancel a visit | **Naya**, appointments | Look up sample availability, collect details, and call booking or cancellation tools |
+| Share feedback about a service visit | **Helen**, customer feedback | Collect feedback and optionally associate it with a sample appointment |
+| Offer services, apply for work, or discuss a partnership | **Marcus**, business development | Collect and categorize the inquiry |
 
-Context travels through a `UserData` dataclass attached to the session:
+For example, “My kitchen sink is leaking and I need someone to come out” should lead Anna to transfer the caller to Naya with the issue summary. Naya’s entry instructions use that summary to acknowledge the leak before continuing the scheduling conversation. This is the intended flow, not a recorded transcript or a measured success claim.
 
-```python
-@dataclass
-class UserData:
-    prev_agent: Optional[Agent] = None
-    agents: Dict[str, Agent] = field(default_factory=dict)
-    problem_description: Optional[str] = None
+## Architecture and decisions
+
+```mermaid
+flowchart TD
+    Caller[Caller audio] --> Input[LiveKit room · BVC Telephony noise cancellation]
+    Input --> STT[Deepgram Nova-3 · English transcription]
+    STT --> Session[AgentSession · GPT-4o-mini\nSilero VAD · multilingual turn detection]
+    Session --> Anna[Anna · Receptionist]
+    Anna -->|Tool handoff + issue summary| Naya[Naya · Appointments]
+    Anna -->|Tool handoff + issue summary| Helen[Helen · Feedback]
+    Anna -->|Tool handoff + issue summary| Marcus[Marcus · Business inquiries]
+    Naya --> Tools[Python tools · simulated business operations]
+    Helen --> Tools
+    Marcus --> Tools
+    Session --> TTS[Cartesia Sonic-2 · per-agent voices]
+    TTS --> Reply[Spoken response]
 ```
 
-The transferring agent writes `problem_description` before handing off, and the receiving agent reads it in `on_enter` to open with an informed greeting instead of a cold one. Agents are held in a registry rather than recreated per transfer, so a caller bounced back to a previous agent returns to the same instance. All four are pre-initialised in the entrypoint to avoid a cold-start pause mid-call — latency you'd hear.
+The implementation lives in [agent.py](agent.py). Python 3.11+ and LiveKit Agents connect the speech, model, and business workflow layers in a single worker.
 
-### Markdown was being read out loud
+### Carry the issue through the handoff
 
-The LLM formats its responses. Asterisks, underscores and backticks are invisible in a chat UI and audible in a voice one — the TTS was pronouncing them.
+A session-scoped `UserData` dataclass holds the agent registry, previous agent, and optional `problem_description`. Each transfer function records the current agent, stores a supplied summary, and returns the destination agent. The specialist’s `on_enter` reads the summary when generating its greeting.
 
-Fixed by subclassing the Cartesia TTS and stripping formatting before synthesis:
+All four agents are instantiated at session startup, so the normal handoff path reuses an existing object. This avoids constructing a specialist during a transfer; it does not establish a measured latency improvement or guarantee preservation of the full conversation history. The registered transfer tools currently belong to Anna, so specialist-to-specialist routing and return routing are future work.
 
-```python
-class CleanTTS(cartesia.TTS):
-    async def say(self, text: str, **kwargs) -> None:
-        await super().say(clean_text(text), **kwargs)
-```
+### Keep each workflow focused
 
-Solving it at the TTS boundary rather than in the prompt means it holds regardless of what the model decides to emit.
+Each specialist has its own instructions, voice, and tool set. Naya gets appointment tools; Helen gets feedback and past-appointment tools; Marcus gets an inquiry submission tool. This makes the available actions easy to inspect and gives each conversation a narrower scope.
 
-### Tuning for telephony, not for a demo
+Business operations are exposed through `function_tool` handlers, providing clear integration points for a future backend. Address, ZIP code, and phone checks currently live in Naya’s prompt. Enforcing those rules in code before accepting a booking is still required.
 
-The voice pipeline is assembled for phone-quality audio and natural turn-taking:
+### Design for spoken interaction
 
-- **STT** — Deepgram Nova-3
-- **TTS** — Cartesia Sonic-2, with per-agent voices
-- **VAD** — Silero
-- **Turn detection** — LiveKit's multilingual model, so turn-ends are predicted from linguistic cues rather than a fixed silence threshold. Fixed thresholds either cut people off mid-sentence or leave dead air.
-- **Noise cancellation** — BVC Telephony, chosen over the general-purpose model because the target input is a phone line.
+Prompts favor short responses, acknowledgment, and clarification before action. The session combines Silero voice activity detection with LiveKit’s multilingual turn detector and configures BVC Telephony noise cancellation. Transcription is explicitly configured for English; the turn detector’s name does not imply multilingual product support.
 
-Agent instructions also carry explicit conversational guidance — pause naturally, don't interrupt, acknowledge before answering — because a response that reads well can still sound wrong.
+`clean_text` and the `CleanTTS.say` override attempt to remove Markdown characters before speech. Unit tests cover the string transformation, but they do not verify that the streaming synthesis path uses the override. Audio-level verification belongs in the next iteration, including checking that cleanup preserves meaningful punctuation.
 
-### Testing agent behaviour, not just agent wiring
+## Run locally
 
-Roughly 2,300 lines of tests across four suites:
+You need Python 3.11+, `uv`, and credentials for LiveKit, OpenAI, Deepgram, and Cartesia. Run these commands from the repository root:
 
-- **Basic** — initialisation, configuration, tool registration
-- **Behavioural** — conversation flow and response quality
-- **Handoffs** — transfer correctness and, importantly, that context survives the transfer
-- **Edge cases** — invalid input, missing data, boundary conditions
-
-The handoff suite is the one that earns its keep. Asserting that a transfer *happened* is trivial; asserting that `problem_description` arrived intact and the receiving agent used it is what actually catches regressions.
-
-### Tools and validation
-
-Business logic sits in `function_tool` handlers rather than in prompts: appointment scheduling, cancellation by tracking ID, technician availability, appointment history lookup. Customer data is validated in code — US address format, phone number format, zip code — so a mis-heard transcription fails a check instead of quietly booking a job to a nonexistent address.
-
-### Deployment
-
-Containerised with a multi-stage build on `python:3.11-slim`, running as a non-privileged user, with `uv` for dependency resolution. Deployed to LiveKit Cloud via `lk agent create` / `deploy` / `rollback`, with region configuration in `livekit.toml`. A `Makefile` wraps the console, dev and production modes so the run path is the same for everyone.
-
-### What I'd do next
-
-- Replace the mocked appointment store with a real database and proper concurrency handling around slot booking
-- Add structured logging and per-turn latency metrics across the STT → LLM → TTS chain, so regressions surface as numbers rather than as "it feels slow"
-- Build an evaluation harness with recorded conversations to catch behavioural drift when prompts or models change
-- Handle provider failure explicitly — timeouts and fallbacks when STT or TTS stalls, rather than letting the caller sit in silence
-  
-## 🏗️ Architecture
-
-The system consists of **4 specialized AI agents** that work together to handle different aspects of customer service:
-### **Anna** - Main Receptionist
-- **Role**: Primary point of contact and call router
-- **Capabilities**: 
-  - Greets customers and determines their needs
-  - Answers general questions about plumbing services
-  - Routes calls to appropriate specialists
-  - Handles emergency situations with priority
-- **Voice**: Professional, friendly receptionist voice
-
-### **Naya** - Appointment Specialist  
-- **Role**: Handles all appointment-related tasks
-- **Capabilities**:
-  - Schedules new plumbing appointments
-  - Reschedules or cancels existing appointments
-  - Checks technician availability
-  - Validates customer information (address, phone, zip code)
-  - Generates tracking IDs for appointments
-- **Voice**: Clear, professional appointment specialist voice
-
-### **Helen** - Customer Feedback Specialist
-- **Role**: Manages customer feedback and suggestions
-- **Capabilities**:
-  - Listens to customer complaints and suggestions
-  - Links feedback to specific past appointments
-  - Stores feedback for management review
-  - Provides empathetic customer support
-- **Voice**: Warm, empathetic feedback specialist voice
-
-### **Marcus** - Business Development Specialist
-- **Role**: Handles business inquiries and partnerships
-- **Capabilities**:
-  - Processes service offerings from other companies
-  - Handles employment requests
-  - Manages partnership proposals
-  - Filters relevant vs. irrelevant business inquiries
-- **Voice**: Professional, business-focused voice
-
-## 🚀 Key Features
-
-### **Intelligent Call Routing**
-- Automatic detection of customer intent
-- Seamless handoffs between specialized agents
-- Context preservation across agent transfers
-- Problem description sharing between agents
-
-### **Advanced Voice Processing**
-- **Speech-to-Text**: Deepgram Nova-3 for accurate transcription
-- **Text-to-Speech**: Cartesia Sonic-2 with custom voice cleaning
-- **Voice Activity Detection**: Silero VAD for natural conversation flow
-- **Turn Detection**: Multilingual model for conversation management
-- **Noise Cancellation**: BVC Telephony for clear audio in noisy environments
-
-### **Smart Appointment Management**
-- Real-time technician availability checking
-- US address and zip code validation
-- Phone number format verification
-- Automatic tracking ID generation
-- Appointment history lookup
-
-### **Comprehensive Data Handling**
-- Customer information collection and validation
-- Feedback storage and categorization
-- Business inquiry processing and filtering
-- Appointment tracking and management
-
-## 🛠️ Technology Stack
-
-- **Framework**: LiveKit Agents
-- **Language Model**: OpenAI GPT-4o-mini
-- **Speech-to-Text**: Deepgram Nova-3
-- **Text-to-Speech**: Cartesia Sonic-2
-- **Voice Processing**: Silero VAD, Multilingual Turn Detection
-- **Noise Cancellation**: BVC Telephony
-- **Language**: Python 3.11+
-- **Package Manager**: UV
-
-## 📋 Prerequisites
-
-Before running the project, you'll need API keys for:
-
-1. **LiveKit** - For real-time communication infrastructure
-2. **OpenAI** - For language model processing
-3. **Cartesia** - For text-to-speech synthesis
-4. **Deepgram** - For speech-to-text transcription
-
-## ⚙️ Project Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd plumbing_voice_ai_agent
-   ```
-
-2. **Install dependencies**
-   ```bash
-   make setup
-   ```
-
-3. **Configure environment variables**
-   ```bash
-   cp .env.sample .env.local
-   # Edit .env.local with your API keys
-   ```
-
-4. **Download required models**
-   ```bash
-   uv run agent.py download-files
-   ```
-
-## 🚀 Running the Project
-
-The project provides several convenient Makefile commands for different running modes:
-
-### Console Mode (Testing)
 ```bash
-# Run the agent in terminal for testing and development
+make setup-dev
+make env-setup
+```
+
+`make env-setup` creates `.env.local` from [.env.sample](.env.sample) only if it does not already exist. Fill in these values:
+
+```dotenv
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-livekit-api-key
+LIVEKIT_API_SECRET=your-livekit-api-secret
+OPENAI_API_KEY=your-openai-api-key
+DEEPGRAM_API_KEY=your-deepgram-api-key
+CARTESIA_API_KEY=your-cartesia-api-key
+```
+
+The template also includes `NEXT_PUBLIC_LIVEKIT_URL`; the Python worker does not use it. `.env.local` is ignored by Git.
+
+Download the required model assets, then start a local session:
+
+```bash
+make download
 make run-console
-# Equivalent to: uv run agent.py console
-```
-**Use case**: Perfect for testing agent responses, debugging, and development. The agent runs in a text-based console where you can type messages and see responses.
-
-### Development Mode
-```bash
-# Start the agent in development mode with hot reloading
-make run-dev
-# Equivalent to: uv run agent.py dev
-
-# In another terminal, start your frontend client
-# The agent will be available at your LiveKit URL
-```
-**Use case**: Ideal for development and testing with a web frontend. The agent runs with development features enabled and connects to your LiveKit development environment.
-
-### Production Mode
-```bash
-# Deploy the agent to LiveKit Cloud for production use
-make run-prod
-# Equivalent to: uv run agent.py start
-```
-**Use case**: Deploys the agent to LiveKit Cloud for production use. This is what you'd use when the agent is ready for real customer calls.
-
-### Manual Commands
-You can also run the commands directly without the Makefile:
-
-```bash
-# Console mode
-uv run agent.py console
-
-# Development mode  
-uv run agent.py dev
-
-# Production mode
-uv run agent.py start
 ```
 
-## 🧪 Testing
+Console mode is the local voice entry point; use a microphone and speakers or headphones to exercise the speech pipeline.
 
-The project includes comprehensive test suites:
+| Command | Purpose |
+| --- | --- |
+| `make run-console` | Run `uv run agent.py console` for local interaction |
+| `make run-dev` | Run `uv run agent.py dev` for development against LiveKit |
+| `make run-prod` | Run `uv run agent.py start` to start a worker that waits for jobs |
+
+Room-based development requires a separate client connected to the same LiveKit project. `make run-prod` starts the worker in the current environment; it does not deploy the application to LiveKit Cloud.
+
+### Try these scenarios
+
+- **Booking:** “My kitchen sink is leaking. Can I schedule a plumber?” Listen for Naya to acknowledge the issue after the transfer.
+- **Feedback:** “I want to leave feedback about my last visit.” Follow Helen’s collection and summary flow.
+- **Business inquiry:** “I supply plumbing equipment and would like to discuss a partnership.” Follow Marcus’s inquiry flow.
+- **Correction:** Give an incomplete phone number during scheduling, then correct it. Inspect how the agent asks for clarification.
+
+Use fictional customer details: the mock tools print submitted information to the console. Availability uses fixed September 2025 dates, and generated appointment history may contain invalid dates. These fixtures need updating for a realistic scheduling demo.
+
+## Testing and debugging
+
+The suite combines direct Python assertions with LiveKit conversation tests that use an LLM to judge response intent. This covers different questions: whether tools and handoff state are wired correctly, and whether the response fits the caller’s request.
+
+After installing development dependencies and configuring credentials:
 
 ```bash
-
-# Run specific test categories
-make test-basic      # Basic functionality tests
-make test-behavior   # Behavioral tests
-make test-handoffs   # Agent handoff tests
-make test-edge-cases # Edge case handling tests
-
-# Run with coverage
-make test-coverage
+make test-basic       # Initialization, tool registration, and text cleanup
+make test-behavior    # Conversation evaluations in tests/test_final.py
+make test-handoffs    # Selected handoff tests
+make test-edge-cases  # Selected edge-case tests
+make test            # Full suite
+make test-coverage   # Full suite with coverage output
 ```
 
-### Test Categories
+The handoff and edge-case Make targets run explicit subsets, not their entire files. The Makefile notes possible failures in more complex cases; a passing subset should not be treated as a passing full suite. Conversation evaluations call OpenAI and may incur usage charges; provider configuration is also needed when tests instantiate speech components. These evaluations are not a substitute for testing actual audio, interruptions, or provider outages.
 
-- **Basic Tests**: Agent initialization, configuration, and tool registration
-- **Behavioral Tests**: Conversation flow, response quality, and user interaction
-- **Handoff Tests**: Agent transfer functionality and context preservation
-- **Edge Case Tests**: Error handling, invalid inputs, and boundary conditions
+For detailed evaluation output:
 
-## 📁 Project Structure
-
-```
-plumbing_voice_ai_agent/
-├── agent.py                 # Main agent implementation
-├── livekit.toml            # LiveKit configuration
-├── pyproject.toml          # Python project configuration
-├── Dockerfile              # Container configuration
-├── Makefile               # Build and test automation
-├── README.md              # This file
-├── .env.sample            # Environment variables template
-├── tests/                 # Test suites
-│   ├── test_simple.py     # Basic unit tests
-│   ├── test_final.py      # Comprehensive behavioral tests
-│   ├── test_agent_handoffs.py    # Handoff functionality tests
-│   └── test_agent_edge_cases.py  # Edge case tests
-└── KMS/                   # Logs directory
-```
-
-## 🔧 Configuration
-
-### LiveKit Configuration (`livekit.toml`)
-```toml
-[project]
-subdomain = "your-livekit-subdomain"
-url = "wss://your-livekit-subdomain.livekit.cloud"
-
-[agent]
-id = "your-agent-id"
-regions = ["us-east"]
-```
-
-### Environment Variables (`.env.local`)
 ```bash
-LIVEKIT_URL="wss://your-subdomain.livekit.cloud"
-LIVEKIT_API_KEY="your-api-key"
-LIVEKIT_API_SECRET="your-api-secret"
-OPENAI_API_KEY="your-openai-key"
-CARTESIA_API_KEY="your-cartesia-key"
-DEEPGRAM_API_KEY="your-deepgram-key"
+make test-verbose
 ```
 
-## 🎯 Use Cases
+Start debugging with the tool outputs and transfer messages in the console. The worker currently uses `print` statements; structured tracing and latency dashboards are not implemented.
 
-### **Customer Service Scenarios**
-- **Emergency Calls**: "I have a burst pipe!" → Immediate routing to appointment specialist
-- **Appointment Booking**: "I need to schedule a repair" → Transfer to Naya for scheduling
-- **Feedback**: "I want to complain about my service" → Transfer to Helen for feedback handling
-- **Business Inquiries**: "I want to sell you supplies" → Transfer to Marcus for business development
+## Container and deployment configuration
 
-### **Appointment Management**
-- Schedule new appointments with available technicians
-- Reschedule or cancel existing appointments using tracking IDs
-- Validate customer information (US addresses, phone numbers, zip codes)
-- Generate and provide tracking IDs for appointment confirmation
+The [Dockerfile](Dockerfile) uses a single Python 3.11 slim Bookworm stage, installs dependencies with `pip`, switches to a non-root user, downloads model assets, and starts the worker with `python agent.py start`.
 
-### **Feedback Processing**
-- Collect customer complaints and suggestions
-- Link feedback to specific past appointments
-- Store feedback for management review
-- Provide empathetic customer support
+[livekit.toml](livekit.toml) contains an existing LiveKit Cloud project subdomain, agent ID, and `us-east` region configuration. Configure your own deployment target before using it. Local setup uses `uv`; the Docker build currently installs from `pyproject.toml` without consuming `uv.lock`, so local and container dependency resolution are not yet aligned.
 
-## 🔄 Agent Handoff Flow
+## Next steps toward a production product
 
-```
-Customer Call
-     ↓
-   Anna (Receptionist)
-     ↓
-   Intent Detection
-     ↓
-┌─────────────────┬─────────────────┬─────────────────┐
-│   Naya          │     Helen       │     Marcus      │
-│ (Appointments)  │   (Feedback)    │ (Business Dev)  │
-└─────────────────┴─────────────────┴─────────────────┘
-     ↓
-  Context Preservation
-     ↓
-  Specialized Service
-```
+1. **Make bookings trustworthy.** Replace mock operations with persistent storage, validate inputs in code, and add idempotency and transactional slot reservation. A spoken confirmation should correspond to a committed booking.
+2. **Make failures recoverable.** Add provider timeouts, explicit failure responses, and a human escalation path. Define how urgent requests leave the automated workflow.
+3. **Make conversations inspectable.** Build an operator view that connects transcripts, tool inputs and results, handoffs, and errors. Capture time to first audio and provider latency so a slow or failed turn can be investigated.
+4. **Measure the caller experience.** Use repeatable audio scenarios to evaluate interruptions, handoff continuity, and speech output. Track booking completion, repeated-information requests, and time to a confirmed next step, then iterate from observed failures.
+5. **Tighten the developer loop.** Separate deterministic tests from provider-backed evaluations, establish a passing CI baseline, and align container builds with the lockfile.
 
-## 🚀 Deployment
+## Repository guide
 
-### Local Development
-```bash
-make dev
-```
-
-### Production Deployment in LiveKit
-For the first time:
-```bash
-lk agent create
-```
-
-And for the other times:
-```bash
-lk agent deploy
-```
-
-To rollback, you can use the following cmd:
-```bash
-lk agent rollback
-```
-
-## 📊 Monitoring and Logs
-
-- **Agent Logs**: Available through LiveKit Cloud dashboard
-- **Console Output**: Real-time logging of agent interactions
-- **Test Results**: Comprehensive test reporting with coverage metrics
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the test results: `make test`
-2. Review the logs in the LiveKit Cloud dashboard
-3. Check the console output for error messages
-4. Ensure all API keys are correctly configured
-
----
-
-**Built with ❤️ using LiveKit Agents**
-
+| Path | Contents |
+| --- | --- |
+| [agent.py](agent.py) | Agent instructions, session setup, handoffs, and mock business tools |
+| [tests/](tests/) | Unit, conversation, handoff, edge-case, and entrypoint tests |
+| [Makefile](Makefile) | Setup, run, and test commands |
+| [pyproject.toml](pyproject.toml) / [uv.lock](uv.lock) | Dependency declarations and local lockfile |
+| [.env.sample](.env.sample) | Credential template |
+| [Dockerfile](Dockerfile) / [livekit.toml](livekit.toml) | Container build and Cloud deployment configuration |
