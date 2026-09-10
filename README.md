@@ -2,10 +2,81 @@
 
 A sophisticated multi-agent voice AI system built with LiveKit for a fictitious plumbing company. This system provides intelligent call routing, appointment scheduling, customer feedback handling, and business development inquiries through natural voice conversations.
 
+## Engineering Notes
+
+A few problems worth calling out, since they're the parts that took real work rather than configuration.
+
+### Handoffs that don't lose the conversation
+
+Routing a caller to a specialist is easy. Routing them *without making them repeat themselves* is the actual problem.
+
+Context travels through a `UserData` dataclass attached to the session:
+
+```python
+@dataclass
+class UserData:
+    prev_agent: Optional[Agent] = None
+    agents: Dict[str, Agent] = field(default_factory=dict)
+    problem_description: Optional[str] = None
+```
+
+The transferring agent writes `problem_description` before handing off, and the receiving agent reads it in `on_enter` to open with an informed greeting instead of a cold one. Agents are held in a registry rather than recreated per transfer, so a caller bounced back to a previous agent returns to the same instance. All four are pre-initialised in the entrypoint to avoid a cold-start pause mid-call — latency you'd hear.
+
+### Markdown was being read out loud
+
+The LLM formats its responses. Asterisks, underscores and backticks are invisible in a chat UI and audible in a voice one — the TTS was pronouncing them.
+
+Fixed by subclassing the Cartesia TTS and stripping formatting before synthesis:
+
+```python
+class CleanTTS(cartesia.TTS):
+    async def say(self, text: str, **kwargs) -> None:
+        await super().say(clean_text(text), **kwargs)
+```
+
+Solving it at the TTS boundary rather than in the prompt means it holds regardless of what the model decides to emit.
+
+### Tuning for telephony, not for a demo
+
+The voice pipeline is assembled for phone-quality audio and natural turn-taking:
+
+- **STT** — Deepgram Nova-3
+- **TTS** — Cartesia Sonic-2, with per-agent voices
+- **VAD** — Silero
+- **Turn detection** — LiveKit's multilingual model, so turn-ends are predicted from linguistic cues rather than a fixed silence threshold. Fixed thresholds either cut people off mid-sentence or leave dead air.
+- **Noise cancellation** — BVC Telephony, chosen over the general-purpose model because the target input is a phone line.
+
+Agent instructions also carry explicit conversational guidance — pause naturally, don't interrupt, acknowledge before answering — because a response that reads well can still sound wrong.
+
+### Testing agent behaviour, not just agent wiring
+
+Roughly 2,300 lines of tests across four suites:
+
+- **Basic** — initialisation, configuration, tool registration
+- **Behavioural** — conversation flow and response quality
+- **Handoffs** — transfer correctness and, importantly, that context survives the transfer
+- **Edge cases** — invalid input, missing data, boundary conditions
+
+The handoff suite is the one that earns its keep. Asserting that a transfer *happened* is trivial; asserting that `problem_description` arrived intact and the receiving agent used it is what actually catches regressions.
+
+### Tools and validation
+
+Business logic sits in `function_tool` handlers rather than in prompts: appointment scheduling, cancellation by tracking ID, technician availability, appointment history lookup. Customer data is validated in code — US address format, phone number format, zip code — so a mis-heard transcription fails a check instead of quietly booking a job to a nonexistent address.
+
+### Deployment
+
+Containerised with a multi-stage build on `python:3.11-slim`, running as a non-privileged user, with `uv` for dependency resolution. Deployed to LiveKit Cloud via `lk agent create` / `deploy` / `rollback`, with region configuration in `livekit.toml`. A `Makefile` wraps the console, dev and production modes so the run path is the same for everyone.
+
+### What I'd do next
+
+- Replace the mocked appointment store with a real database and proper concurrency handling around slot booking
+- Add structured logging and per-turn latency metrics across the STT → LLM → TTS chain, so regressions surface as numbers rather than as "it feels slow"
+- Build an evaluation harness with recorded conversations to catch behavioural drift when prompts or models change
+- Handle provider failure explicitly — timeouts and fallbacks when STT or TTS stalls, rather than letting the caller sit in silence
+  
 ## 🏗️ Architecture
 
 The system consists of **4 specialized AI agents** that work together to handle different aspects of customer service:
-
 ### **Anna** - Main Receptionist
 - **Role**: Primary point of contact and call router
 - **Capabilities**: 
